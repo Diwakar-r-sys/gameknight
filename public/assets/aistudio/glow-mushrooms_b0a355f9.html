@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glow Mushrooms</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0a0d18; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { width: min(96vw, 960px); height: auto; display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="800"></canvas>
+<script>
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+ctx.scale(2, 2);
+const W = 640, H = 400;
+
+// glowing spots on the cap: [x, y, radius]
+const spots = [[-38,-205,9],[-8,-232,6],[30,-215,10],[52,-175,6],[-58,-168,6],[8,-190,5]];
+
+// floating spores
+const spores = Array.from({ length: 40 }, () => ({
+  x: Math.random() * W, y: Math.random() * H,
+  r: Math.random() * 1.8 + .6, v: Math.random() * .3 + .1,
+  p: Math.random() * 6.28, h: [170, 285, 200][Math.floor(Math.random() * 3)]
+}));
+
+// x, y = base of the stem | s = scale | t = time | ph = phase offset | hue = cap colour
+function mushroom(x, y, s, t, ph, hue) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(s, s);
+
+  // glow halo
+  const g = ctx.createRadialGradient(0, -190, 10, 0, -190, 170);
+  g.addColorStop(0, `hsla(${hue},90%,60%,${.22 + .06 * Math.sin(t * 2 + ph)})`);
+  g.addColorStop(1, `hsla(${hue},90%,60%,0)`);
+  ctx.fillStyle = g;
+  ctx.fillRect(-200, -380, 400, 400);
+
+  // sway
+  ctx.rotate(Math.sin(t * 1.1 + ph) * .035);
+
+  // stem
+  const sg = ctx.createLinearGradient(-18, 0, 18, 0);
+  sg.addColorStop(0, '#8b8576'); sg.addColorStop(.45, '#d6cfbf'); sg.addColorStop(1, '#6f6a5e');
+  ctx.fillStyle = sg;
+  ctx.beginPath();
+  ctx.moveTo(-20, 0);
+  ctx.bezierCurveTo(-13, -60, -10, -100, -13, -140);
+  ctx.lineTo(13, -140);
+  ctx.bezierCurveTo(10, -100, 13, -60, 20, 0);
+  ctx.quadraticCurveTo(0, 9, -20, 0);
+  ctx.fill();
+
+  // gills (underside of the cap)
+  ctx.fillStyle = `hsl(${hue},40%,12%)`;
+  ctx.beginPath(); ctx.ellipse(0, -140, 82, 14, 0, 0, 6.283); ctx.fill();
+  ctx.strokeStyle = `hsla(${hue},50%,60%,.35)`;
+  ctx.lineWidth = 1;
+  for (let i = -7; i <= 7; i++) {
+    ctx.beginPath(); ctx.moveTo(i * 10, -142); ctx.lineTo(i * 11, -128); ctx.stroke();
+  }
+
+  // cap
+  const cg = ctx.createRadialGradient(-20, -235, 10, 0, -190, 110);
+  cg.addColorStop(0, `hsl(${hue},55%,42%)`);
+  cg.addColorStop(1, `hsl(${hue},60%,16%)`);
+  ctx.fillStyle = cg;
+  ctx.beginPath();
+  ctx.moveTo(-88, -140);
+  ctx.bezierCurveTo(-92, -230, -42, -264, 0, -264);
+  ctx.bezierCurveTo(42, -264, 92, -230, 88, -140);
+  ctx.quadraticCurveTo(0, -152, -88, -140);
+  ctx.fill();
+
+  // highlight on the cap
+  ctx.strokeStyle = 'rgba(255,255,255,.18)';
+  ctx.lineWidth = 3; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-66, -200);
+  ctx.bezierCurveTo(-60, -235, -35, -252, -10, -256);
+  ctx.stroke();
+
+  // pulsing glow spots
+  spots.forEach(([sx, sy, r], i) => {
+    const a = .55 + .45 * Math.sin(t * 2.2 + ph + i);
+    const sg2 = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 3.2);
+    sg2.addColorStop(0, `hsla(${hue + 110},100%,78%,${a})`);
+    sg2.addColorStop(1, `hsla(${hue + 110},100%,70%,0)`);
+    ctx.fillStyle = sg2;
+    ctx.beginPath(); ctx.arc(sx, sy, r * 3.2, 0, 6.283); ctx.fill();
+    ctx.fillStyle = `hsla(${hue + 110},100%,85%,${.6 + .4 * a})`;
+    ctx.beginPath(); ctx.arc(sx, sy, r * .8, 0, 6.283); ctx.fill();
+  });
+
+  ctx.restore();
+}
+
+function frame(ms) {
+  const t = ms / 1000;
+
+  // dark background
+  ctx.fillStyle = '#0a0d18'; ctx.fillRect(0, 0, W, H);
+  const v = ctx.createRadialGradient(W / 2, H * .6, 40, W / 2, H * .6, 420);
+  v.addColorStop(0, '#141a30'); v.addColorStop(1, '#0a0d18');
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+
+  // ground shadows
+  ctx.fillStyle = 'rgba(0,0,0,.45)';
+  [[320,372,110],[190,376,60],[460,378,70]].forEach(([x, y, r]) => {
+    ctx.beginPath(); ctx.ellipse(x, y, r, 9, 0, 0, 6.283); ctx.fill();
+  });
+
+  // back to front
+  mushroom(190, 376, .5, t, 1.7, 330);
+  mushroom(460, 378, .6, t, 3.1, 200);
+  mushroom(320, 372, 1,  t, 0,   285);
+
+  // spores
+  spores.forEach(p => {
+    p.y -= p.v; p.x += Math.sin(t + p.p) * .25;
+    if (p.y < -5) { p.y = H + 5; p.x = Math.random() * W; }
+    ctx.fillStyle = `hsla(${p.h},100%,75%,${.25 + .25 * Math.sin(t * 2 + p.p)})`;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.283); ctx.fill();
+  });
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

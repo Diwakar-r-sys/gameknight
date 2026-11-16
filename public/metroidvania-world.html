@@ -1,0 +1,1552 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Mossgrotto · Interconnected Metroidvania World</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      background: #040b0d; color: #e6f4ee;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      user-select: none;
+    }
+    canvas { display: block; width: 100vw; height: 100dvh; outline: none; cursor: crosshair; }
+
+    .hud {
+      position: fixed; inset: 0; pointer-events: none;
+      display: flex; flex-direction: column; justify-content: space-between;
+      padding: 16px 20px; z-index: 10;
+    }
+    .hud-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .hud-left { display: flex; align-items: center; gap: 14px; }
+    .soul-orb {
+      width: 52px; height: 52px; border-radius: 50%;
+      border: 2px solid #40916c; background: #071315;
+      position: relative; overflow: hidden; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .soul-fill {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      background: linear-gradient(180deg, #6ee7b7, #2d6a4f);
+      transition: height 120ms ease-out;
+    }
+    .soul-val {
+      position: relative; z-index: 2; font: 600 12px ui-monospace, monospace;
+      font-variant-numeric: tabular-nums; color: #ecfdf5; text-shadow: 0 1px 3px #000;
+    }
+    .stats-col { display: flex; flex-direction: column; gap: 5px; }
+    .masks-row { display: flex; gap: 5px; }
+    .meta-row { font-size: 12px; color: #9ec4b7; display: flex; gap: 8px; align-items: center; }
+    .meta-room { font-weight: 600; color: #d8f3dc; }
+    .xp-wrap { width: 250px; display: flex; flex-direction: column; gap: 3px; }
+    .xp-head { display: flex; justify-content: space-between; font-size: 11px; color: #cbe5dc; font-variant-numeric: tabular-nums; }
+    .xp-bar { height: 6px; border-radius: 99px; background: #071315; border: 1px solid #24443f; overflow: hidden; }
+    .xp-fill { height: 100%; background: #52b788; transform-origin: left; transition: transform 140ms ease-out; }
+    .attack-line { font-size: 10.5px; color: #88aba0; }
+    .attack-line strong { color: #fde047; font-weight: 600; }
+
+    .hud-right { pointer-events: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+    .hud-actions { display: flex; align-items: center; gap: 8px; }
+    .timer-txt { font: 500 12px ui-monospace, monospace; font-variant-numeric: tabular-nums; color: #8fb4a7; margin-right: 4px; }
+    .icon-btn {
+      min-width: 44px; height: 44px; padding: 0 12px; border-radius: 8px;
+      border: 1px solid #24443f; background: rgba(8, 22, 24, 0.9); color: #cbe5dc;
+      font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+    }
+    .icon-btn:hover { background: #112a2c; border-color: #4c8f7d; color: #fff; }
+
+    .minimap-box {
+      border: 1px solid #24443f; background: rgba(6, 17, 19, 0.92);
+      border-radius: 8px; padding: 8px; cursor: pointer; text-align: left;
+    }
+    .minimap-box:hover { border-color: #4c8f7d; }
+    .minimap-foot {
+      margin-top: 4px; display: flex; justify-content: space-between; gap: 8px;
+      font: 500 10px ui-monospace, monospace; font-variant-numeric: tabular-nums; color: #83a69b;
+    }
+
+    .banner {
+      margin: 6px auto 0; padding: 10px 22px; border-radius: 10px;
+      border: 1px solid rgba(94, 234, 212, 0.5); background: rgba(8, 22, 24, 0.95);
+      text-align: center; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    }
+    .banner-sub { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: #74c69d; font-weight: 700; }
+    .banner-title { font-size: 16px; font-weight: 700; color: #eef7f3; margin-top: 2px; }
+
+    .controls-bar {
+      text-align: center; font-size: 11px; color: #88aba0; letter-spacing: 0.02em;
+    }
+
+    .map-modal {
+      position: fixed; inset: 0; z-index: 40; display: none;
+      align-items: center; justify-content: center; padding: 24px;
+      background: rgba(2, 8, 9, 0.92);
+    }
+    .map-modal.open { display: flex; }
+    .map-panel {
+      width: min(920px, 100%); height: min(640px, 90dvh);
+      border: 1px solid #294c44; border-radius: 12px; background: #071315;
+      display: flex; flex-direction: column; overflow: hidden;
+    }
+    .map-head {
+      padding: 14px 20px; border-bottom: 1px solid #193330;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .map-head h2 { font-size: 17px; font-weight: 700; color: #eef7f3; }
+    .map-head p { font-size: 12px; color: #89aba0; margin-top: 2px; font-variant-numeric: tabular-nums; }
+    .map-body {
+      position: relative; flex: 1; background: #040c0e;
+      display: flex; align-items: center; justify-content: center; overflow: hidden;
+    }
+    .map-legend {
+      padding: 10px 20px; border-top: 1px solid #193330; background: #061012;
+      display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+      font-size: 11px; color: #8eb0a5;
+    }
+    .legend-items { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+    .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+  </style>
+</head>
+<body>
+  <canvas id="game" tabindex="0"></canvas>
+
+  <div class="hud">
+    <div class="hud-top">
+      <div class="hud-left">
+        <div class="soul-orb" title="Soul Vessel">
+          <div class="soul-fill" id="soulFill" style="height: 33%"></div>
+          <span class="soul-val" id="soulVal">33</span>
+        </div>
+        <div class="stats-col">
+          <div class="masks-row" id="masksRow"></div>
+          <div class="meta-row">
+            <span class="meta-room" id="roomLabel">Frozen Rim Entry</span>
+            <span>·</span>
+            <span id="regionLabel">Ice Cavern</span>
+            <span>·</span>
+            <span id="essenceLabel">0 Essence</span>
+          </div>
+          <div class="xp-wrap">
+            <div class="xp-head">
+              <span id="levelLabel">Level 1: Beginner Knight</span>
+              <span id="xpLabel">0/25 XP</span>
+            </div>
+            <div class="xp-bar"><div class="xp-fill" id="xpFill" style="transform: scaleX(0.02)"></div></div>
+            <div class="attack-line">Attack: <strong id="attackLabel">Level 1 Horizontal / Aim Slash</strong></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hud-right">
+        <div class="hud-actions">
+          <span class="timer-txt" id="timerTxt">00:00</span>
+          <button class="icon-btn" id="btnMap" type="button">Map (M)</button>
+          <button class="icon-btn" id="btnMute" type="button">Audio: On</button>
+        </div>
+        <button class="minimap-box" id="miniMapBtn" type="button" title="Open Full World Map (M)">
+          <svg id="miniMapSvg" width="156" height="90" viewBox="0 0 156 90"></svg>
+          <div class="minimap-foot">
+            <span id="miniRegion">Ice Cavern</span>
+            <span id="miniCoord">[0,0] · M</span>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <div class="banner" id="banner" style="display: none;">
+      <div class="banner-sub" id="bannerSub">Entering Region</div>
+      <div class="banner-title" id="bannerTitle">Crystal Ice Cavern</div>
+    </div>
+
+    <div class="controls-bar">
+      A / D Move · Space Jump / Double Jump · J / X Slash (W+J Up · Air S+J Pogo) · K / Shift Dash · V Special Wave · F Heal · M Map · Physically explore edges &amp; glowing gateways
+    </div>
+  </div>
+
+  <div class="map-modal" id="mapModal" role="dialog" aria-modal="true" aria-label="Interconnected World Map">
+    <div class="map-panel">
+      <div class="map-head">
+        <div>
+          <h2 id="fullMapTitle">Crystal Ice Cavern · Interconnected Grid</h2>
+          <p id="fullMapMeta">1 / 8 Chambers Explored</p>
+        </div>
+        <button class="icon-btn" id="btnCloseMap" type="button">Close (M / Esc)</button>
+      </div>
+      <div class="map-body">
+        <svg id="fullMapSvg" width="740" height="440" viewBox="-40 -30 740 440" style="overflow:visible"></svg>
+      </div>
+      <div class="map-legend">
+        <div class="legend-items">
+          <span><i class="swatch" style="background:#112c29;border:1px solid #40916c;"></i>Visited</span>
+          <span><i class="swatch" style="background:#081617;border:1px dashed #2f5b52;"></i>Unexplored Connected</span>
+          <span><i class="swatch" style="background:#133a42;border:1px solid #40916c;"></i>Secret</span>
+          <span><i class="swatch" style="background:#ecfdf5;border-radius:50%;"></i>Vessel</span>
+        </div>
+        <span>Walk through glowing region gateways to travel seamlessly between Ice Cavern, Swamp Forest &amp; Green Grotto</span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const canvas = document.getElementById('game');
+      const ctx = canvas.getContext('2d');
+      canvas.focus();
+
+      // === AUDIO HOOK ===
+      const audio = {
+        ctx: null,
+        muted: false,
+        ensure() {
+          if (this.muted) return null;
+          if (!this.ctx) {
+            const AC = window.AudioContext || window.webkitAudioContext;
+            if (AC) this.ctx = new AC();
+          }
+          if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+          return this.ctx;
+        },
+        tone(freq, endFreq, dur, type, gainVal) {
+          const ac = this.ensure();
+          if (!ac) return;
+          const now = ac.currentTime;
+          const osc = ac.createOscillator();
+          const gain = ac.createGain();
+          osc.type = type || 'triangle';
+          osc.frequency.setValueAtTime(freq, now);
+          osc.frequency.exponentialRampToValueAtTime(Math.max(40, endFreq), now + dur);
+          gain.gain.setValueAtTime(gainVal, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+          osc.connect(gain); gain.connect(ac.destination);
+          osc.start(now); osc.stop(now + dur);
+        },
+        playHit(heavy) {
+          this.tone(heavy ? 185 : 240, 62, heavy ? 0.13 : 0.09, 'sawtooth', heavy ? 0.22 : 0.16);
+          this.tone(heavy ? 920 : 1200, 320, 0.06, 'triangle', 0.12);
+        },
+        playSlash(pitch = 1) { this.tone(420 * pitch, 140 * pitch, 0.08, 'triangle', 0.1); },
+        playJump() { this.tone(240, 520, 0.11, 'sine', 0.1); },
+        playPogo() { this.tone(360, 780, 0.12, 'triangle', 0.13); },
+        playDash() { this.tone(310, 110, 0.13, 'sawtooth', 0.09); },
+        playPortal() { this.tone(340, 880, 0.35, 'sine', 0.15); },
+      };
+
+      // === PROGRESSION (10 LEVELS) ===
+      const LEVEL_THRESHOLDS = [0, 25, 65, 115, 180, 260, 360, 480, 620, 780];
+      const LEVEL_TITLES = [
+        'Beginner Knight', 'Warrior Knight', 'Quick Knight', 'Wall Climber', 'Double Jumper',
+        'Energy Master', 'Shadow Warrior', 'Soul Master', 'Ancient Knight', 'Ultimate Knight',
+      ];
+      function computeLevel(xp) {
+        let lvl = 1;
+        for (let i = 1; i < LEVEL_THRESHOLDS.length; i++) {
+          if (xp >= LEVEL_THRESHOLDS[i]) lvl = i + 1;
+        }
+        return lvl;
+      }
+
+      // === INTERCONNECTED 3-BIOME WORLD DATA (8 ROOMS PER BIOME = 24 ROOMS) ===
+      function buildWorld(theme) {
+        if (theme === 'swamp') {
+          return {
+            theme: 'swamp',
+            title: 'Mystic Swamp Forest',
+            width: 4600, height: 1460,
+            spawnX: 160, spawnY: 720,
+            platforms: [
+              { x: -60, y: 0, w: 80, h: 1460, kind: 'stone' },
+              { x: 4540, y: 0, w: 100, h: 1460, kind: 'stone' },
+              { x: 0, y: 0, w: 4600, h: 110, kind: 'stone' },
+              // Crossing
+              { x: 20, y: 780, w: 420, h: 680, kind: 'moss' },
+              { x: 440, y: 940, w: 280, h: 520, kind: 'stone' },
+              { x: 450, y: 725, w: 230, h: 24, kind: 'bridge' },
+              { x: 720, y: 780, w: 360, h: 680, kind: 'moss' },
+              { x: 780, y: 680, w: 190, h: 24, kind: 'island' },
+              // Fallen Log Span
+              { x: 1080, y: 945, w: 880, h: 60, kind: 'stone' },
+              { x: 1120, y: 755, w: 240, h: 24, kind: 'bridge' },
+              { x: 1455, y: 705, w: 260, h: 24, kind: 'bridge' },
+              { x: 1810, y: 755, w: 190, h: 24, kind: 'bridge' },
+              { x: 1510, y: 830, w: 150, h: 24, kind: 'island' },
+              // Overhanging Rootway + Canopy Stilt Shrine
+              { x: 2010, y: 615, w: 150, h: 24, kind: 'island' },
+              { x: 1830, y: 505, w: 170, h: 24, kind: 'island' },
+              { x: 1550, y: 415, w: 185, h: 24, kind: 'island' },
+              { x: 1260, y: 365, w: 210, h: 26, kind: 'moss' },
+              { x: 2090, y: 385, w: 180, h: 24, kind: 'bridge' },
+              { x: 2340, y: 350, w: 340, h: 26, kind: 'bridge' },
+              { x: 2770, y: 315, w: 230, h: 26, kind: 'island' },
+              { x: 3120, y: 455, w: 135, h: 24, kind: 'island' },
+              // Submerged Marsh Sluice
+              { x: 1080, y: 1005, w: 50, h: 455, kind: 'stone' },
+              { x: 1130, y: 1320, w: 1170, h: 140, kind: 'moss' },
+              { x: 1320, y: 1190, w: 190, h: 24, kind: 'bridge' },
+              { x: 1680, y: 1150, w: 200, h: 24, kind: 'bridge' },
+              { x: 1995, y: 1075, w: 155, h: 24, kind: 'island' },
+              { x: 1985, y: 945, w: 145, h: 24, kind: 'island' },
+              // Misty Reed Flats & Bog Hollow Vault
+              { x: 2160, y: 780, w: 320, h: 240, kind: 'moss' },
+              { x: 2480, y: 945, w: 460, h: 55, kind: 'stone' },
+              { x: 2560, y: 740, w: 220, h: 24, kind: 'bridge' },
+              { x: 2940, y: 780, w: 320, h: 680, kind: 'moss' },
+              { x: 2300, y: 960, w: 540, h: 55, kind: 'stone' },
+              { x: 2300, y: 1320, w: 660, h: 140, kind: 'moss' },
+              // Twilight Fen Sanctum
+              { x: 3260, y: 780, w: 1280, h: 680, kind: 'moss' },
+              { x: 3560, y: 645, w: 170, h: 24, kind: 'bridge' },
+              { x: 4080, y: 645, w: 170, h: 24, kind: 'bridge' },
+            ],
+            waters: [
+              { x: 440, y: 840, w: 280, h: 102 },
+              { x: 1080, y: 845, w: 880, h: 102 },
+              { x: 2480, y: 845, w: 460, h: 102 },
+              { x: 1130, y: 1235, w: 1170, h: 90 },
+            ],
+            thorns: [
+              { x: 1370, y: 915, w: 140, h: 30 },
+              { x: 1700, y: 915, w: 160, h: 30 },
+            ],
+            airStreams: [],
+            bouncePads: [],
+            huts: [{ x: 480, y: 725 }, { x: 2585, y: 740 }, { x: 2810, y: 315 }],
+            vines: [
+              { x: 340, y: 110, len: 220 }, { x: 1580, y: 110, len: 190 }, { x: 2660, y: 110, len: 210 },
+            ],
+            orbs: [
+              { id: 'sw-1', x: 565, y: 685, xp: 35, alive: true },
+              { id: 'sw-2', x: 1585, y: 665, xp: 45, alive: true },
+              { id: 'sw-3', x: 1350, y: 325, xp: 55, alive: true },
+              { id: 'sw-4', x: 2885, y: 275, xp: 65, alive: true },
+              { id: 'sw-5', x: 1780, y: 1110, xp: 60, alive: true },
+              { id: 'sw-6', x: 2490, y: 1275, xp: 70, alive: true },
+            ],
+            enemies: [
+              { id: 'sw-c1', kind: 'crawler', x: 820, y: 748, w: 38, h: 32, vx: 74, vy: 0, hp: 45, maxHp: 45, facing: 1, hitFlash: 0, alive: true, homeX: 820, homeY: 748 },
+              { id: 'sw-c2', kind: 'crawler', x: 1450, y: 1288, w: 38, h: 32, vx: 78, vy: 0, hp: 50, maxHp: 50, facing: 1, hitFlash: 0, alive: true, homeX: 1450, homeY: 1288 },
+              { id: 'sw-f1', kind: 'flyer', x: 1580, y: 580, w: 36, h: 34, vx: 0, vy: 0, hp: 60, maxHp: 60, facing: -1, hitFlash: 0, alive: true, homeX: 1580, homeY: 580 },
+              { id: 'sw-f2', kind: 'flyer', x: 3920, y: 560, w: 42, h: 38, vx: 0, vy: 0, hp: 95, maxHp: 95, facing: -1, hitFlash: 0, alive: true, homeX: 3920, homeY: 560 },
+            ],
+            rooms: [
+              { id: 'swamp-crossing', name: 'Stilt Village Crossing', gx: 0, gy: 1, x: 0, y: 380, w: 1080, h: 600, visited: true, discovered: true, adj: ['swamp-bridges'], portalLinks: [{ label: 'Ice Cavern', theme: 'crystal', dir: 'W' }] },
+              { id: 'swamp-bridges', name: 'Fallen Log Span', gx: 1, gy: 1, x: 1080, y: 380, w: 1080, h: 580, visited: false, discovered: true, adj: ['swamp-crossing', 'swamp-roots', 'swamp-sluice', 'swamp-flats'] },
+              { id: 'swamp-roots', name: 'Overhanging Rootway', gx: 1, gy: 0, x: 1180, y: 110, w: 1100, h: 270, visited: false, discovered: false, adj: ['swamp-bridges', 'swamp-shrine'] },
+              { id: 'swamp-shrine', name: 'Canopy Stilt Shrine', gx: 2, gy: 0, x: 2280, y: 110, w: 980, h: 270, visited: false, discovered: false, adj: ['swamp-roots', 'swamp-flats'] },
+              { id: 'swamp-sluice', name: 'Submerged Marsh Sluice', gx: 1, gy: 2, x: 1080, y: 960, w: 1220, h: 480, visited: false, discovered: false, adj: ['swamp-bridges', 'swamp-vault'] },
+              { id: 'swamp-flats', name: 'Misty Reed Flats', gx: 2, gy: 1, x: 2160, y: 380, w: 1100, h: 520, visited: false, discovered: false, adj: ['swamp-bridges', 'swamp-shrine', 'swamp-vault', 'swamp-sanctum'] },
+              { id: 'swamp-vault', name: 'Bog Hollow Vault', gx: 2, gy: 2, x: 2300, y: 900, w: 960, h: 540, visited: false, discovered: false, isSecret: true, adj: ['swamp-sluice', 'swamp-flats'] },
+              { id: 'swamp-sanctum', name: 'Twilight Fen Sanctum', gx: 3, gy: 1, x: 3260, y: 160, w: 1340, h: 980, visited: false, discovered: false, adj: ['swamp-flats'], portalLinks: [{ label: 'Green Grotto', theme: 'grotto', dir: 'E' }] },
+            ],
+            portals: [
+              { x: 24, y: 630, w: 72, h: 150, targetTheme: 'crystal', spawnX: 3145, spawnY: 1820, label: 'Ice Cavern', shortLabel: '← Ice Cavern' },
+              { x: 4445, y: 630, w: 75, h: 150, targetTheme: 'grotto', spawnX: 145, spawnY: 820, label: 'Green Grotto', shortLabel: 'Green Grotto →' },
+            ],
+          };
+        }
+
+        if (theme === 'grotto') {
+          return {
+            theme: 'grotto',
+            title: 'Lush Green Moss Grotto',
+            width: 3800, height: 1860,
+            spawnX: 160, spawnY: 820,
+            platforms: [
+              { x: -60, y: 0, w: 80, h: 1860, kind: 'stone' },
+              { x: 3740, y: 0, w: 100, h: 1860, kind: 'stone' },
+              { x: 0, y: 0, w: 3800, h: 110, kind: 'stone' },
+              // Entry Glade
+              { x: 20, y: 880, w: 420, h: 320, kind: 'moss' },
+              { x: 440, y: 1015, w: 320, h: 185, kind: 'stone' },
+              { x: 490, y: 745, w: 120, h: 28, kind: 'island' },
+              { x: 660, y: 775, w: 115, h: 28, kind: 'island' },
+              { x: 760, y: 880, w: 240, h: 320, kind: 'moss' },
+              { x: 0, y: 580, w: 980, h: 90, kind: 'stone' },
+              // Central Moss Labyrinth
+              { x: 1000, y: 1120, w: 460, h: 100, kind: 'moss' },
+              { x: 1620, y: 1120, w: 520, h: 100, kind: 'moss' },
+              { x: 1350, y: 720, w: 52, h: 240, kind: 'stone' },
+              { x: 1810, y: 660, w: 52, h: 260, kind: 'stone' },
+              { x: 1070, y: 920, w: 180, h: 28, kind: 'island' },
+              { x: 1470, y: 880, w: 220, h: 28, kind: 'island' },
+              { x: 980, y: 650, w: 300, h: 55, kind: 'stone' },
+              { x: 1520, y: 650, w: 620, h: 55, kind: 'stone' },
+              // Vine Canopy Maze + Crawlspace
+              { x: 1210, y: 520, w: 160, h: 28, kind: 'island' },
+              { x: 1490, y: 425, w: 180, h: 28, kind: 'island' },
+              { x: 1810, y: 500, w: 190, h: 28, kind: 'island' },
+              { x: 1360, y: 260, w: 460, h: 26, kind: 'moss' },
+              { x: 980, y: 390, w: 170, h: 28, kind: 'moss' },
+              { x: 520, y: 160, w: 44, h: 420, kind: 'stone' },
+              { x: 564, y: 440, w: 376, h: 48, kind: 'moss' },
+              // Cistern + Root Hollow
+              { x: 560, y: 1580, w: 400, h: 280, kind: 'moss' },
+              { x: 960, y: 1675, w: 500, h: 185, kind: 'stone' },
+              { x: 1130, y: 1495, w: 140, h: 28, kind: 'island' },
+              { x: 1460, y: 1580, w: 140, h: 280, kind: 'moss' },
+              { x: 1600, y: 1670, w: 280, h: 190, kind: 'stone' },
+              { x: 1880, y: 1580, w: 280, h: 280, kind: 'moss' },
+              { x: 120, y: 1220, w: 400, h: 60, kind: 'stone' },
+              { x: 120, y: 1280, w: 44, h: 580, kind: 'stone' },
+              { x: 164, y: 1580, w: 356, h: 280, kind: 'moss' },
+              // Sunbeam Ascent
+              { x: 2640, y: 620, w: 50, h: 1240, kind: 'stone' },
+              { x: 2160, y: 1380, w: 165, h: 28, kind: 'bridge' },
+              { x: 2465, y: 1140, w: 175, h: 28, kind: 'bridge' },
+              { x: 2160, y: 880, w: 250, h: 32, kind: 'moss' },
+              { x: 2475, y: 690, w: 165, h: 28, kind: 'bridge' },
+              // Grotto Heart Sanctum
+              { x: 2640, y: 620, w: 1100, h: 260, kind: 'moss' },
+              { x: 2860, y: 485, w: 145, h: 24, kind: 'island' },
+              { x: 3230, y: 485, w: 145, h: 24, kind: 'island' },
+            ],
+            waters: [
+              { x: 440, y: 905, w: 320, h: 112 },
+              { x: 960, y: 1595, w: 500, h: 82 },
+            ],
+            thorns: [{ x: 1605, y: 1638, w: 270, h: 32 }],
+            airStreams: [{ x: 2345, y: 220, w: 96, h: 1160, lift: 1940 }],
+            bouncePads: [
+              { x: 350, y: 864, w: 68, h: 18, boost: -840, timer: 0 },
+              { x: 1270, y: 1104, w: 72, h: 18, boost: -880, timer: 0 },
+              { x: 1560, y: 864, w: 72, h: 18, boost: -900, timer: 0 },
+              { x: 1980, y: 1564, w: 74, h: 18, boost: -920, timer: 0 },
+              { x: 2515, y: 1124, w: 72, h: 18, boost: -860, timer: 0 },
+              { x: 3060, y: 604, w: 74, h: 18, boost: -820, timer: 0 },
+            ],
+            huts: [],
+            vines: [
+              { x: 280, y: 670, len: 145 }, { x: 1120, y: 110, len: 220 },
+              { x: 1430, y: 110, len: 250 }, { x: 1740, y: 110, len: 235 }, { x: 2390, y: 110, len: 240 },
+            ],
+            orbs: [
+              { id: 'gr-1', x: 550, y: 710, xp: 35, alive: true },
+              { id: 'gr-2', x: 1580, y: 845, xp: 45, alive: true },
+              { id: 'gr-3', x: 1590, y: 225, xp: 60, alive: true },
+              { id: 'gr-4', x: 1200, y: 1460, xp: 60, alive: true },
+              { id: 'gr-5', x: 2930, y: 450, xp: 75, alive: true },
+            ],
+            enemies: [
+              { id: 'gr-c1', kind: 'crawler', x: 1140, y: 1088, w: 38, h: 32, vx: 76, vy: 0, hp: 45, maxHp: 45, facing: 1, hitFlash: 0, alive: true, homeX: 1140, homeY: 1088 },
+              { id: 'gr-c2', kind: 'crawler', x: 700, y: 1548, w: 38, h: 32, vx: -78, vy: 0, hp: 45, maxHp: 45, facing: -1, hitFlash: 0, alive: true, homeX: 700, homeY: 1548 },
+              { id: 'gr-f1', kind: 'flyer', x: 1620, y: 310, w: 36, h: 34, vx: 0, vy: 0, hp: 60, maxHp: 60, facing: -1, hitFlash: 0, alive: true, homeX: 1620, homeY: 310 },
+              { id: 'gr-f2', kind: 'flyer', x: 3190, y: 440, w: 42, h: 38, vx: 0, vy: 0, hp: 95, maxHp: 95, facing: -1, hitFlash: 0, alive: true, homeX: 3190, homeY: 440 },
+            ],
+            rooms: [
+              { id: 'grotto-entry', name: 'Emerald Entry Glade', gx: 0, gy: 1, x: 0, y: 580, w: 980, h: 620, visited: true, discovered: true, adj: ['grotto-labyrinth'], portalLinks: [{ label: 'Swamp Forest', theme: 'swamp', dir: 'W' }] },
+              { id: 'grotto-labyrinth', name: 'Central Moss Labyrinth', gx: 1, gy: 1, x: 980, y: 650, w: 1160, h: 550, visited: false, discovered: true, adj: ['grotto-entry', 'grotto-canopy', 'grotto-cistern', 'grotto-ascent'] },
+              { id: 'grotto-canopy', name: 'Vine Canopy Maze', gx: 1, gy: 0, x: 980, y: 110, w: 1160, h: 540, visited: false, discovered: false, adj: ['grotto-labyrinth', 'grotto-sec-canopy', 'grotto-ascent'] },
+              { id: 'grotto-sec-canopy', name: 'Canopy Sanctuary', gx: 0, gy: 0, x: 520, y: 160, w: 460, h: 420, visited: false, discovered: false, isSecret: true, adj: ['grotto-canopy'] },
+              { id: 'grotto-cistern', name: 'Sunken Spore Cistern', gx: 1, gy: 2, x: 520, y: 1200, w: 1620, h: 640, visited: false, discovered: false, adj: ['grotto-labyrinth', 'grotto-ascent', 'grotto-sec-hollow'] },
+              { id: 'grotto-sec-hollow', name: 'Forgotten Root Hollow', gx: 0, gy: 2, x: 120, y: 1220, w: 400, h: 620, visited: false, discovered: false, isSecret: true, adj: ['grotto-cistern'] },
+              { id: 'grotto-ascent', name: 'Sunbeam Ascent', gx: 2, gy: 1, x: 2140, y: 160, w: 540, h: 1600, visited: false, discovered: false, adj: ['grotto-canopy', 'grotto-labyrinth', 'grotto-cistern', 'grotto-sanctum'] },
+              { id: 'grotto-sanctum', name: 'Grotto Heart Sanctum', gx: 3, gy: 0, x: 2680, y: 160, w: 1100, h: 720, visited: false, discovered: false, adj: ['grotto-ascent'], portalLinks: [{ label: 'Ice Cavern', theme: 'crystal', dir: 'E' }] },
+            ],
+            portals: [
+              { x: 24, y: 730, w: 72, h: 150, targetTheme: 'swamp', spawnX: 4320, spawnY: 720, label: 'Swamp Forest', shortLabel: '← Swamp Forest' },
+              { x: 3655, y: 470, w: 75, h: 150, targetTheme: 'crystal', spawnX: 2515, spawnY: 560, label: 'Ice Cavern', shortLabel: 'Ice Cavern →' },
+            ],
+          };
+        }
+
+        // Default: Crystal Ice Cavern (Vertical Shaft & Chasm Layout)
+        return {
+          theme: 'crystal',
+          title: 'Crystal Ice Cavern',
+          width: 3400, height: 2150,
+          spawnX: 160, spawnY: 360,
+          platforms: [
+            { x: -60, y: 0, w: 80, h: 2150, kind: 'stone' },
+            { x: 3360, y: 0, w: 120, h: 2150, kind: 'stone' },
+            { x: 0, y: 0, w: 3400, h: 120, kind: 'stone' },
+            // Entry
+            { x: 20, y: 420, w: 500, h: 320, kind: 'moss' },
+            { x: 620, y: 420, w: 140, h: 320, kind: 'moss' },
+            { x: 400, y: 335, w: 145, h: 26, kind: 'island' },
+            { x: 635, y: 265, w: 115, h: 26, kind: 'island' },
+            // Glacial Drop Shaft
+            { x: 720, y: 740, w: 60, h: 220, kind: 'stone' },
+            { x: 720, y: 1160, w: 60, h: 300, kind: 'stone' },
+            { x: 1360, y: 120, w: 60, h: 240, kind: 'stone' },
+            { x: 1360, y: 620, w: 60, h: 220, kind: 'stone' },
+            { x: 1360, y: 1080, w: 60, h: 380, kind: 'stone' },
+            { x: 830, y: 495, w: 155, h: 26, kind: 'island' },
+            { x: 1150, y: 620, w: 165, h: 26, kind: 'island' },
+            { x: 840, y: 785, w: 165, h: 26, kind: 'island' },
+            { x: 1140, y: 955, w: 170, h: 26, kind: 'island' },
+            { x: 830, y: 1125, w: 175, h: 26, kind: 'island' },
+            { x: 1135, y: 1310, w: 175, h: 26, kind: 'island' },
+            { x: 855, y: 1505, w: 165, h: 26, kind: 'island' },
+            { x: 1155, y: 1685, w: 165, h: 26, kind: 'island' },
+            // Shattered Tiers
+            { x: 20, y: 720, w: 500, h: 60, kind: 'stone' },
+            { x: 620, y: 720, w: 100, h: 60, kind: 'stone' },
+            { x: 480, y: 1120, w: 240, h: 240, kind: 'moss' },
+            { x: 545, y: 990, w: 135, h: 26, kind: 'island' },
+            { x: 425, y: 870, w: 135, h: 26, kind: 'island' },
+            { x: 290, y: 1020, w: 155, h: 28, kind: 'island' },
+            { x: 95, y: 925, w: 175, h: 30, kind: 'moss' },
+            { x: 20, y: 1270, w: 320, h: 90, kind: 'stone' },
+            { x: 350, y: 1370, w: 120, h: 26, kind: 'island' },
+            // Subzero Abyss + Vault
+            { x: 20, y: 1880, w: 670, h: 270, kind: 'moss' },
+            { x: 340, y: 1620, w: 135, h: 26, kind: 'island' },
+            { x: 420, y: 1755, w: 130, h: 26, kind: 'island' },
+            { x: 690, y: 1995, w: 540, h: 155, kind: 'stone' },
+            { x: 750, y: 1795, w: 130, h: 28, kind: 'island' },
+            { x: 990, y: 1775, w: 135, h: 28, kind: 'island' },
+            { x: 1230, y: 1880, w: 530, h: 270, kind: 'moss' },
+            { x: 1760, y: 1480, w: 540, h: 70, kind: 'stone' },
+            { x: 2260, y: 1550, w: 40, h: 170, kind: 'stone' },
+            { x: 1760, y: 1880, w: 540, h: 270, kind: 'moss' },
+            // Crystal Spire Rift & Frostwind Crossing
+            { x: 1420, y: 1060, w: 220, h: 28, kind: 'moss' },
+            { x: 1730, y: 1140, w: 165, h: 26, kind: 'island' },
+            { x: 1995, y: 1030, w: 175, h: 26, kind: 'island' },
+            { x: 2270, y: 1130, w: 180, h: 26, kind: 'island' },
+            { x: 1420, y: 1390, w: 940, h: 90, kind: 'stone' },
+            { x: 1690, y: 920, w: 150, h: 26, kind: 'island' },
+            { x: 1530, y: 790, w: 140, h: 26, kind: 'island' },
+            { x: 2720, y: 780, w: 60, h: 680, kind: 'stone' },
+            { x: 2620, y: 1480, w: 740, h: 70, kind: 'stone' },
+            { x: 2300, y: 1880, w: 1060, h: 270, kind: 'moss' },
+            { x: 2430, y: 1735, w: 150, h: 26, kind: 'island' },
+            { x: 2345, y: 1585, w: 145, h: 26, kind: 'island' },
+            { x: 2495, y: 1425, w: 155, h: 26, kind: 'island' },
+            { x: 2860, y: 1755, w: 190, h: 26, kind: 'bridge' },
+            // Apex Spire
+            { x: 1360, y: 620, w: 180, h: 160, kind: 'moss' },
+            { x: 1680, y: 620, w: 1080, h: 160, kind: 'moss' },
+            { x: 1900, y: 485, w: 155, h: 24, kind: 'bridge' },
+            { x: 2310, y: 485, w: 155, h: 24, kind: 'bridge' },
+          ],
+          waters: [{ x: 690, y: 1890, w: 540, h: 108 }],
+          thorns: [
+            { x: 70, y: 1238, w: 250, h: 32 },
+            { x: 1690, y: 1358, w: 250, h: 32 },
+            { x: 2050, y: 1358, w: 260, h: 32 },
+          ],
+          airStreams: [
+            { x: 1015, y: 260, w: 105, h: 1600, lift: 1980 },
+            { x: 1560, y: 420, w: 100, h: 820, lift: 1900 },
+          ],
+          bouncePads: [],
+          huts: [],
+          vines: [{ x: 960, y: 120, len: 180 }, { x: 1190, y: 120, len: 210 }],
+          orbs: [
+            { id: 'ic-1', x: 475, y: 300, xp: 35, alive: true },
+            { id: 'ic-2', x: 910, y: 460, xp: 40, alive: true },
+            { id: 'ic-3', x: 365, y: 985, xp: 45, alive: true },
+            { id: 'ic-4', x: 1410, y: 1845, xp: 60, alive: true },
+            { id: 'ic-5', x: 2080, y: 990, xp: 65, alive: true },
+            { id: 'ic-6', x: 2955, y: 1715, xp: 75, alive: true },
+          ],
+          enemies: [
+            { id: 'ic-c1', kind: 'crawler', x: 380, y: 388, w: 38, h: 32, vx: 72, vy: 0, hp: 45, maxHp: 45, facing: 1, hitFlash: 0, alive: true, homeX: 380, homeY: 388 },
+            { id: 'ic-c2', kind: 'crawler', x: 2820, y: 1848, w: 38, h: 32, vx: -78, vy: 0, hp: 50, maxHp: 50, facing: -1, hitFlash: 0, alive: true, homeX: 2820, homeY: 1848 },
+            { id: 'ic-f1', kind: 'flyer', x: 1060, y: 880, w: 36, h: 34, vx: 0, vy: 0, hp: 60, maxHp: 60, facing: -1, hitFlash: 0, alive: true, homeX: 1060, homeY: 880 },
+            { id: 'ic-f2', kind: 'flyer', x: 2200, y: 500, w: 42, h: 38, vx: 0, vy: 0, hp: 95, maxHp: 95, facing: -1, hitFlash: 0, alive: true, homeX: 2200, homeY: 500 },
+          ],
+          rooms: [
+            { id: 'ice-entry', name: 'Frozen Rim Entry', gx: 0, gy: 0, x: 0, y: 120, w: 760, h: 620, visited: true, discovered: true, adj: ['ice-shaft', 'ice-tiers'] },
+            { id: 'ice-tiers', name: 'Shattered Crystal Tiers', gx: 0, gy: 1, x: 20, y: 740, w: 740, h: 720, visited: false, discovered: true, adj: ['ice-entry', 'ice-shaft', 'ice-abyss'] },
+            { id: 'ice-shaft', name: 'Glacial Drop Shaft', gx: 1, gy: 1, x: 760, y: 120, w: 600, h: 1340, visited: false, discovered: true, adj: ['ice-entry', 'ice-tiers', 'ice-abyss', 'ice-sanctum', 'ice-rift'] },
+            { id: 'ice-abyss', name: 'Subzero Abyss Pool', gx: 1, gy: 2, x: 20, y: 1460, w: 1740, h: 680, visited: false, discovered: false, adj: ['ice-tiers', 'ice-shaft', 'ice-vault'] },
+            { id: 'ice-vault', name: 'Crystalline Vault', gx: 2, gy: 2, x: 1760, y: 1460, w: 540, h: 680, visited: false, discovered: false, adj: ['ice-abyss', 'ice-east-gate'] },
+            { id: 'ice-rift', name: 'Crystal Spire Rift', gx: 2, gy: 1, x: 1360, y: 780, w: 1400, h: 680, visited: false, discovered: false, adj: ['ice-shaft', 'ice-sanctum', 'ice-east-gate'] },
+            { id: 'ice-east-gate', name: 'Frostwind Crossing', gx: 3, gy: 2, x: 2300, y: 1460, w: 1080, h: 680, visited: false, discovered: false, adj: ['ice-vault', 'ice-rift'], portalLinks: [{ label: 'Swamp Forest', theme: 'swamp', dir: 'E' }] },
+            { id: 'ice-sanctum', name: 'Apex Spire', gx: 2, gy: 0, x: 1360, y: 120, w: 1400, h: 660, visited: false, discovered: false, adj: ['ice-shaft', 'ice-rift'], portalLinks: [{ label: 'Green Grotto', theme: 'grotto', dir: 'NE' }] },
+          ],
+          portals: [
+            { x: 3255, y: 1730, w: 75, h: 150, targetTheme: 'swamp', spawnX: 150, spawnY: 720, label: 'Swamp Forest', shortLabel: 'Swamp Forest →' },
+            { x: 2650, y: 470, w: 75, h: 150, targetTheme: 'grotto', spawnX: 3560, spawnY: 560, label: 'Green Grotto', shortLabel: 'Green Grotto ↗' },
+          ],
+        };
+      }
+
+      // === ROOM MANAGER & CAMERA ===
+      const roomManager = {
+        currentRoom: null,
+        roomX: 0,
+        roomY: 0,
+        transitionTimer: 0,
+        findRoom(rooms, cx, cy) {
+          for (const r of rooms) {
+            if (cx >= r.x && cx < r.x + r.w && cy >= r.y && cy < r.y + r.h) return r;
+          }
+          return rooms[0];
+        },
+        sync(world, player) {
+          const r = this.findRoom(world.rooms, player.x + player.w * 0.5, player.y + player.h * 0.5);
+          if (!r) return;
+          if (!this.currentRoom || this.currentRoom.id !== r.id) {
+            this.currentRoom = r;
+            this.roomX = r.gx;
+            this.roomY = r.gy;
+            this.transitionTimer = 0.4;
+            spawnFloatText(player.x + player.w * 0.5, player.y - 20, r.name, '#a7f3d0');
+          }
+          if (!r.visited) {
+            r.visited = true; r.discovered = true;
+            addXp(25, player.x + player.w * 0.5, player.y - 36);
+          }
+          for (const adjId of r.adj) {
+            const a = world.rooms.find((x) => x.id === adjId);
+            if (a && !a.isSecret) a.discovered = true;
+          }
+        },
+      };
+
+      class Camera {
+        constructor(smoothingFactor = 0.09) {
+          this.x = 0;
+          this.y = 0;
+          this.targetX = 0;
+          this.targetY = 0;
+          this.smoothingFactor = smoothingFactor; // 0.08 - 0.10 buttery cinematic lerp
+          this.deadzoneW = 48;
+          this.deadzoneH = 36;
+          this.lookAheadDistance = 88;
+          this.focusX = 0;
+          this.focusY = 0;
+          this.lookAheadX = 0;
+          this.lookAheadY = 0;
+          this.initialized = false;
+        }
+
+        computeClampedTarget(rawX, rawY, viewW, viewH, world, room) {
+          const worldMaxX = Math.max(0, world.width - viewW);
+          const worldMaxY = Math.max(0, world.height - viewH);
+          if (!room) {
+            return {
+              x: Math.max(0, Math.min(worldMaxX, rawX)),
+              y: Math.max(0, Math.min(worldMaxY, rawY)),
+            };
+          }
+
+          let hasW = false, hasE = false, hasN = false, hasS = false;
+          for (const adjId of room.adj) {
+            const a = world.rooms.find((rm) => rm.id === adjId);
+            if (!a) continue;
+            if (a.x + a.w <= room.x + 24) hasW = true;
+            if (a.x >= room.x + room.w - 24) hasE = true;
+            if (a.y + a.h <= room.y + 24) hasN = true;
+            if (a.y >= room.y + room.h - 24) hasS = true;
+          }
+
+          let minX = 0, maxX = worldMaxX;
+          if (!hasW) minX = room.x <= 40 ? 0 : Math.max(0, room.x - 16);
+          if (!hasE) {
+            const rightEdge = room.x + room.w;
+            maxX = rightEdge >= world.width - 40 ? worldMaxX : Math.max(0, Math.min(worldMaxX, rightEdge + 16 - viewW));
+          }
+          const clampedX = minX > maxX
+            ? Math.max(0, Math.min(worldMaxX, room.x + (room.w - viewW) * 0.5))
+            : Math.max(minX, Math.min(maxX, rawX));
+
+          let minY = 0, maxY = worldMaxY;
+          if (!hasN) minY = room.y <= 140 ? 0 : Math.max(0, room.y - 24);
+          if (!hasS) {
+            const bottomEdge = room.y + room.h;
+            maxY = bottomEdge >= world.height - 40 ? worldMaxY : Math.max(0, Math.min(worldMaxY, bottomEdge + 24 - viewH));
+          }
+          const clampedY = minY > maxY
+            ? Math.max(0, Math.min(worldMaxY, room.y + (room.h - viewH) * 0.5))
+            : Math.max(minY, Math.min(maxY, rawY));
+
+          return {
+            x: Math.max(0, Math.min(worldMaxX, clampedX)),
+            y: Math.max(0, Math.min(worldMaxY, clampedY)),
+          };
+        }
+
+        update(world, player, viewW, viewH, dt, immediate = false) {
+          const room = roomManager.currentRoom || world.rooms[0];
+          const pcx = player.x + player.w * 0.5;
+          const pcy = player.y + player.h * 0.5;
+
+          if (immediate || !this.initialized) {
+            this.focusX = pcx;
+            this.focusY = pcy;
+            this.lookAheadX = player.facing * (this.lookAheadDistance * 0.5);
+            this.lookAheadY = 0;
+            const snap = this.computeClampedTarget(
+              this.focusX + this.lookAheadX - viewW * 0.5,
+              this.focusY + this.lookAheadY - viewH * 0.52,
+              viewW, viewH, world, room
+            );
+            this.x = snap.x;
+            this.y = snap.y;
+            this.targetX = snap.x;
+            this.targetY = snap.y;
+            this.initialized = true;
+            return;
+          }
+
+          const stepDt = Math.max(0.001, Math.min(0.05, dt));
+
+          // 1. Deadzone tracking around the player
+          const halfDzW = this.deadzoneW * 0.5;
+          const halfDzH = this.deadzoneH * 0.5;
+          const dx = pcx - this.focusX;
+          const dy = pcy - this.focusY;
+          if (Math.abs(dx) > halfDzW) this.focusX = pcx - Math.sign(dx) * halfDzW;
+          if (Math.abs(dy) > halfDzH) this.focusY = pcy - Math.sign(dy) * halfDzH;
+
+          // 2. Smooth directional Look-Ahead offset
+          const lookLerp = 1 - Math.pow(1 - 0.08, stepDt * 60);
+          const desiredLookX = player.facing * this.lookAheadDistance + Math.max(-32, Math.min(32, player.vx * 0.06));
+          const desiredLookY = Math.max(-56, Math.min(72, player.vy * 0.075));
+          this.lookAheadX += (desiredLookX - this.lookAheadX) * lookLerp;
+          this.lookAheadY += (desiredLookY - this.lookAheadY) * lookLerp;
+
+          // 3. Centered framing target clamped to room/map bounds
+          const clamped = this.computeClampedTarget(
+            this.focusX + this.lookAheadX - viewW * 0.5,
+            this.focusY + this.lookAheadY - viewH * 0.52,
+            viewW, viewH, world, room
+          );
+          this.targetX = clamped.x;
+          this.targetY = clamped.y;
+
+          // 4. Smooth Lerp Following: camera.x += (targetX - camera.x) * smoothingFactor
+          const activeSmooth = roomManager.transitionTimer > 0 ? 0.115 : this.smoothingFactor;
+          const alpha = 1 - Math.pow(1 - activeSmooth, stepDt * 60);
+          this.x += (this.targetX - this.x) * alpha;
+          this.y += (this.targetY - this.y) * alpha;
+
+          if (Math.abs(this.targetX - this.x) < 0.05) this.x = this.targetX;
+          if (Math.abs(this.targetY - this.y) < 0.05) this.y = this.targetY;
+        }
+      }
+      const camera = new Camera(0.09);
+
+      // === GLOBAL GAME STATE ===
+      const biomeCache = {};
+      let world = buildWorld('crystal');
+      const player = {
+        x: world.spawnX, y: world.spawnY, w: 28, h: 46,
+        vx: 0, vy: 0, facing: 1, grounded: false,
+        hp: 5, maxHp: 5, soul: 33, maxSoul: 100, essence: 0, xp: 0, level: 1,
+        airJumps: 1, dashTimer: 0, dashCd: 0, invuln: 0, recoilTimer: 0,
+        safeX: world.spawnX, safeY: world.spawnY,
+      };
+      const slash = { active: false, x: 0, y: 0, dir: 'right', timer: 0, duration: 0.14, radius: 56, damage: 15, hitIds: new Set(), name: 'Horizontal Slash' };
+      const waves = [];
+      const particles = [];
+      const floatTexts = [];
+      let hitStopTimer = 0;
+      let shakeTime = 0, shakeMag = 0;
+      let portalCooldown = 0;
+      let elapsed = 0;
+      let comboStep = 0;
+      let bannerTimer = 0;
+      let mapOpen = false;
+
+      const keys = {};
+      const pressed = {};
+      window.addEventListener('keydown', (e) => {
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+        if (e.code === 'KeyM') { toggleMap(); return; }
+        if (e.code === 'Escape' && mapOpen) { toggleMap(false); return; }
+        if (!keys[e.code]) pressed[e.code] = true;
+        keys[e.code] = true;
+      });
+      window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+      canvas.addEventListener('mousedown', (e) => {
+        canvas.focus();
+        if (e.button === 0) pressed['KeyJ'] = true;
+        if (e.button === 2) pressed['KeyV'] = true;
+      });
+      canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+      function spawnParticle(x, y, vx, vy, size, life, color) {
+        particles.push({ x, y, vx, vy, size, life, maxLife: life, color });
+      }
+      function spawnFloatText(x, y, text, color) {
+        floatTexts.push({ x, y, text, color, life: 0.8, maxLife: 0.8 });
+      }
+      function addXp(amt, x, y) {
+        const prevLvl = player.level;
+        player.xp += amt;
+        player.level = computeLevel(player.xp);
+        spawnFloatText(x, y, `+${amt} XP`, '#fde047');
+        if (player.level > prevLvl) {
+          showBanner('Level Up!', `Level ${player.level}: ${LEVEL_TITLES[player.level - 1]}`);
+          audio.playPortal();
+        }
+      }
+      function showBanner(sub, title) {
+        document.getElementById('bannerSub').textContent = sub;
+        document.getElementById('bannerTitle').textContent = title;
+        document.getElementById('banner').style.display = 'block';
+        bannerTimer = 2.6;
+      }
+
+      // === 5-STEP TRIGGER ATTACK JUICE ===
+      function triggerAttackJuice(enemy, hitPoint, vec, heavy = false) {
+        // 1. Flash Effect (#ffffff for 4 frames)
+        enemy.hitFlash = 4 / 60;
+        // 2. Impact Audio Hook
+        audio.playHit(heavy);
+        // 3. Particle Blast (12-15 directional sparks)
+        const baseAng = Math.atan2(vec.y, vec.x);
+        const count = heavy ? 15 : 12;
+        for (let i = 0; i < count; i++) {
+          const ang = baseAng + (Math.random() - 0.5) * 1.25;
+          const spd = (heavy ? 320 : 250) * (0.45 + Math.random() * 0.75);
+          spawnParticle(hitPoint.x, hitPoint.y, Math.cos(ang) * spd, Math.sin(ang) * spd - 20, 2.5 + Math.random() * 2, 0.25 + Math.random() * 0.16, i % 3 === 0 ? '#ffffff' : '#fde047');
+        }
+        // 4. Knockback + Simultaneous Player Recoil
+        const kDir = Math.abs(vec.x) > 0.2 ? Math.sign(vec.x) : Math.sign((enemy.x + enemy.w * 0.5) - (player.x + player.w * 0.5)) || 1;
+        enemy.knockVx = kDir * (heavy ? 240 : 185);
+        enemy.knockTimer = 0.15;
+        if (player.dashTimer <= 0) {
+          player.vx = -kDir * (heavy ? 210 : 175);
+          player.recoilTimer = 0.085;
+        }
+        // 5. Hit-Stop (2-3 frames) & Screen Shake
+        hitStopTimer = Math.max(hitStopTimer, 3 / 60);
+        shakeMag = Math.max(shakeMag, heavy ? 8 : 5);
+        shakeTime = Math.max(shakeTime, 0.16);
+      }
+
+      function rectsOverlap(a, b) {
+        return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+      }
+
+      function saveBiomeState() {
+        biomeCache[world.theme] = {
+          visited: world.rooms.filter((r) => r.visited).map((r) => r.id),
+          discovered: world.rooms.filter((r) => r.discovered).map((r) => r.id),
+          deadEnemies: world.enemies.filter((e) => !e.alive).map((e) => e.id),
+          takenOrbs: world.orbs.filter((o) => !o.alive).map((o) => o.id),
+        };
+      }
+
+      function switchBiomeThroughPortal(portal) {
+        saveBiomeState();
+        world = buildWorld(portal.targetTheme);
+        const mem = biomeCache[world.theme];
+        if (mem) {
+          for (const r of world.rooms) {
+            if (mem.visited.includes(r.id)) r.visited = true;
+            if (mem.discovered.includes(r.id)) r.discovered = true;
+          }
+          for (const e of world.enemies) if (mem.deadEnemies.includes(e.id)) e.alive = false;
+          for (const o of world.orbs) if (mem.takenOrbs.includes(o.id)) o.alive = false;
+        }
+        player.x = portal.spawnX;
+        player.y = portal.spawnY;
+        player.safeX = portal.spawnX;
+        player.safeY = portal.spawnY;
+        portalCooldown = 1.2;
+        roomManager.currentRoom = null;
+        roomManager.sync(world, player);
+        camera.update(world, player, viewW, viewH, 1, true);
+        audio.playPortal();
+        showBanner('Entering Region', world.title);
+      }
+
+      function startPrimarySlash() {
+        const up = keys['KeyW'] || keys['ArrowUp'];
+        const down = keys['KeyS'] || keys['ArrowDown'];
+        let dir = player.facing === 1 ? 'right' : 'left';
+        if (up) dir = 'up';
+        else if (down && !player.grounded) dir = 'down';
+        const lvl = player.level;
+        slash.active = true;
+        slash.dir = dir;
+        slash.duration = 0.14;
+        slash.timer = 0.14;
+        slash.radius = lvl >= 9 ? 74 : lvl >= 5 ? 64 : 56;
+        slash.damage = lvl >= 9 ? 32 : lvl >= 5 ? 24 : lvl >= 2 ? 20 : 15;
+        if (lvl >= 9) comboStep = (comboStep + 1) % 3;
+        slash.name = dir === 'up' ? 'Upward Aim Slash' : dir === 'down' ? 'Downward Pogo' : (lvl >= 9 ? `Combo Hit ${comboStep + 1}` : lvl >= 3 && player.dashTimer > 0 ? 'Dash Slash' : 'Horizontal Slash');
+        slash.hitIds.clear();
+        audio.playSlash(dir === 'up' ? 1.15 : dir === 'down' ? 0.9 : 1);
+      }
+
+      function fireSpecialWave() {
+        if (player.level < 6) {
+          spawnFloatText(player.x + 14, player.y - 16, 'SPECIAL: LVL 6', '#94a3b8');
+          return;
+        }
+        const isUlt = player.level >= 10;
+        const dirs = isUlt ? [player.facing, -player.facing] : [player.facing];
+        for (const d of dirs) {
+          waves.push({
+            x: player.x + 14 + d * 20, y: player.y + 23, vx: d * (isUlt ? 640 : 520),
+            dir: d, life: isUlt ? 1.0 : 0.75, damage: isUlt ? 48 : 30, color: isUlt ? '#fde047' : '#67e8f9',
+            hitIds: new Set(),
+          });
+        }
+        audio.playSlash(0.75);
+      }
+
+      function step(dt) {
+        if (bannerTimer > 0) {
+          bannerTimer -= dt;
+          if (bannerTimer <= 0) document.getElementById('banner').style.display = 'none';
+        }
+        if (portalCooldown > 0) portalCooldown = Math.max(0, portalCooldown - dt);
+        if (shakeTime > 0) shakeTime = Math.max(0, shakeTime - dt);
+
+        if (hitStopTimer > 0) {
+          hitStopTimer = Math.max(0, hitStopTimer - dt);
+          return;
+        }
+
+        // Controls
+        const left = keys['KeyA'] || keys['ArrowLeft'];
+        const right = keys['KeyD'] || keys['ArrowRight'];
+        const moveX = (right ? 1 : 0) - (left ? 1 : 0);
+        if (moveX !== 0 && player.recoilTimer <= 0 && player.dashTimer <= 0) player.facing = moveX;
+
+        if ((pressed['KeyK'] || pressed['ShiftLeft'] || pressed['ShiftRight']) && player.dashCd <= 0) {
+          if (player.level < 3) {
+            spawnFloatText(player.x + 14, player.y - 16, 'DASH: LVL 3', '#94a3b8');
+          } else {
+            player.dashTimer = 0.16;
+            player.dashCd = 0.42;
+            player.vx = player.facing * 860;
+            player.vy = 0;
+            audio.playDash();
+          }
+        }
+
+        if (pressed['Space'] || pressed['KeyZ']) {
+          if (player.grounded) {
+            player.vy = -640; player.grounded = false; audio.playJump();
+          } else if (player.airJumps > 0 && player.level >= 5) {
+            player.airJumps--; player.vy = -590; audio.playJump();
+          }
+        }
+
+        if (pressed['KeyJ'] || pressed['KeyX']) startPrimarySlash();
+        if (pressed['KeyV']) fireSpecialWave();
+        if (pressed['KeyF'] && player.soul >= 33 && player.hp < player.maxHp) {
+          player.soul -= 33; player.hp++; audio.playPortal();
+        }
+
+        if (player.dashTimer > 0) {
+          player.dashTimer -= dt;
+          player.vx = player.facing * 860;
+          player.vy = 0;
+        } else {
+          if (player.recoilTimer > 0) player.recoilTimer -= dt;
+          else player.vx += (moveX * 360 - player.vx) * Math.min(1, dt * 15);
+          player.vy = Math.min(780, player.vy + (player.vy < 0 ? 1650 : 2450) * dt);
+        }
+        if (player.dashCd > 0) player.dashCd = Math.max(0, player.dashCd - dt);
+        if (player.invuln > 0) player.invuln = Math.max(0, player.invuln - dt);
+
+        // Air streams & water
+        const pRect = { x: player.x, y: player.y, w: player.w, h: player.h };
+        for (const st of world.airStreams) {
+          if (rectsOverlap(pRect, st)) player.vy = Math.max(-520, player.vy - st.lift * dt);
+        }
+        for (const w of world.waters) {
+          if (rectsOverlap(pRect, w)) player.vy = Math.min(180, player.vy * 0.92);
+        }
+
+        // Collide X & Y
+        player.x += player.vx * dt;
+        for (const p of world.platforms) {
+          if (rectsOverlap(player, p)) {
+            if (player.vx > 0) player.x = p.x - player.w;
+            else if (player.vx < 0) player.x = p.x + p.w;
+            player.vx = 0;
+          }
+        }
+        player.y += player.vy * dt;
+        player.grounded = false;
+        for (const p of world.platforms) {
+          if (rectsOverlap(player, p)) {
+            if (player.vy >= 0) {
+              player.y = p.y - player.h; player.vy = 0; player.grounded = true; player.airJumps = 1;
+              if (player.x > p.x + 16 && player.x + player.w < p.x + p.w - 16) {
+                player.safeX = player.x; player.safeY = player.y;
+              }
+            } else {
+              player.y = p.y + p.h; player.vy = 0;
+            }
+          }
+        }
+
+        // Bounce Pads
+        for (const bp of world.bouncePads) {
+          if (bp.timer > 0) bp.timer = Math.max(0, bp.timer - dt);
+          if (player.vy >= -40 && rectsOverlap(player, bp)) {
+            player.y = bp.y - player.h; player.vy = bp.boost; player.airJumps = 1; bp.timer = 0.25;
+            audio.playPogo();
+          }
+        }
+
+        // Thorns
+        for (const t of world.thorns) {
+          if (rectsOverlap(player, t) && player.invuln <= 0) {
+            player.hp = Math.max(1, player.hp - 1);
+            player.invuln = 1.0; player.x = player.safeX; player.y = player.safeY; player.vx = 0; player.vy = 0;
+            audio.playHit(true);
+          }
+        }
+
+        // Slash update & collision
+        if (slash.active) {
+          slash.timer -= dt;
+          const cx = player.x + player.w * 0.5;
+          const cy = player.y + player.h * 0.5;
+          const vec = slash.dir === 'right' ? { x: 1, y: 0 } : slash.dir === 'left' ? { x: -1, y: 0 } : slash.dir === 'up' ? { x: 0, y: -1 } : { x: 0, y: 1 };
+          slash.x = cx + vec.x * 14; slash.y = cy + vec.y * 14;
+          const box = slash.dir === 'up'
+            ? { x: cx - 34, y: cy - slash.radius - 10, w: 68, h: slash.radius + 14 }
+            : slash.dir === 'down'
+              ? { x: cx - 34, y: cy - 4, w: 68, h: slash.radius + 18 }
+              : { x: slash.dir === 'right' ? cx - 6 : cx - slash.radius - 8, y: cy - 30, w: slash.radius + 14, h: 60 };
+
+          for (const e of world.enemies) {
+            if (!e.alive || slash.hitIds.has(e.id)) continue;
+            if (rectsOverlap(box, e)) {
+              slash.hitIds.add(e.id);
+              e.hp -= slash.damage;
+              player.soul = Math.min(player.maxSoul, player.soul + 14);
+              const hpPt = { x: Math.max(e.x, Math.min(slash.x, e.x + e.w)), y: Math.max(e.y, Math.min(slash.y, e.y + e.h)) };
+              triggerAttackJuice(e, hpPt, vec, player.level >= 5);
+              spawnFloatText(hpPt.x, e.y - 10, `-${slash.damage}`, '#fef08a');
+              if (slash.dir === 'down') { player.vy = -590; player.airJumps = 1; audio.playPogo(); }
+              if (e.hp <= 0) {
+                e.alive = false; player.essence += 30; addXp(45, e.x + 16, e.y - 20);
+              }
+            }
+          }
+          if (slash.dir === 'down') {
+            for (const t of world.thorns) {
+              if (!slash.hitIds.has('t') && rectsOverlap(box, t)) {
+                slash.hitIds.add('t'); player.vy = -590; player.airJumps = 1; audio.playPogo();
+              }
+            }
+          }
+          if (slash.timer <= 0) slash.active = false;
+        }
+
+        // Special Waves
+        for (let i = waves.length - 1; i >= 0; i--) {
+          const wv = waves[i];
+          wv.life -= dt; wv.x += wv.vx * dt;
+          if (wv.life <= 0) { waves.splice(i, 1); continue; }
+          const box = { x: wv.x - 24, y: wv.y - 34, w: 48, h: 68 };
+          for (const e of world.enemies) {
+            if (!e.alive || wv.hitIds.has(e.id)) continue;
+            if (rectsOverlap(box, e)) {
+              wv.hitIds.add(e.id); e.hp -= wv.damage;
+              triggerAttackJuice(e, { x: wv.x, y: wv.y }, { x: wv.dir, y: 0 }, true);
+              if (e.hp <= 0) { e.alive = false; player.essence += 30; addXp(45, e.x + 16, e.y - 20); }
+            }
+          }
+        }
+
+        // Enemies patrol
+        for (const e of world.enemies) {
+          if (!e.alive) continue;
+          if (e.hitFlash > 0) e.hitFlash = Math.max(0, e.hitFlash - dt);
+          if (e.knockTimer > 0) {
+            e.knockTimer -= dt;
+            e.x += (e.knockVx || 0) * dt;
+          } else if (e.kind === 'crawler') {
+            e.x += e.vx * dt;
+            if (Math.abs(e.x - e.homeX) > 90) e.vx *= -1;
+          } else {
+            e.x = e.homeX + Math.sin(elapsed * 1.4) * 90;
+            e.y = e.homeY + Math.cos(elapsed * 2.1) * 28;
+          }
+        }
+
+        // Orbs
+        for (const o of world.orbs) {
+          if (!o.alive) continue;
+          if (Math.hypot(player.x + 14 - o.x, player.y + 23 - o.y) < 30) {
+            o.alive = false; player.essence += 20; addXp(o.xp, o.x, o.y - 12); audio.playPortal();
+          }
+        }
+
+        // Particles & float texts
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const p = particles[i];
+          p.life -= dt; p.vy += 220 * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+          if (p.life <= 0) particles.splice(i, 1);
+        }
+        for (let i = floatTexts.length - 1; i >= 0; i--) {
+          const f = floatTexts[i];
+          f.life -= dt; f.y -= 44 * dt;
+          if (f.life <= 0) floatTexts.splice(i, 1);
+        }
+
+        // Room tracking + Physical Portal Crossing
+        roomManager.sync(world, player);
+        if (portalCooldown <= 0) {
+          for (const portal of world.portals) {
+            if (rectsOverlap(player, portal)) {
+              switchBiomeThroughPortal(portal);
+              break;
+            }
+          }
+        }
+        camera.update(world, player, viewW, viewH, dt, false);
+      }
+
+      // === RENDERING ===
+      let viewW = window.innerWidth, viewH = window.innerHeight;
+      function resize() {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        viewW = window.innerWidth; viewH = window.innerHeight;
+        canvas.width = Math.floor(viewW * dpr);
+        canvas.height = Math.floor(viewH * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+      window.addEventListener('resize', resize);
+      resize();
+      roomManager.sync(world, player);
+      camera.update(world, player, viewW, viewH, 1, true);
+
+      function render() {
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, viewH);
+        if (world.theme === 'crystal') {
+          bgGrad.addColorStop(0, '#071422'); bgGrad.addColorStop(1, '#040a12');
+        } else if (world.theme === 'swamp') {
+          bgGrad.addColorStop(0, '#13162b'); bgGrad.addColorStop(1, '#080b16');
+        } else {
+          bgGrad.addColorStop(0, '#09241a'); bgGrad.addColorStop(1, '#04100b');
+        }
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, viewW, viewH);
+
+        const sx = shakeTime > 0 ? (Math.random() * 2 - 1) * shakeMag : 0;
+        const sy = shakeTime > 0 ? (Math.random() * 2 - 1) * shakeMag : 0;
+
+        ctx.save();
+        ctx.translate(-Math.round(camera.x + sx), -Math.round(camera.y + sy));
+
+        // Air Streams
+        for (const st of world.airStreams) {
+          const g = ctx.createLinearGradient(st.x, 0, st.x + st.w, 0);
+          g.addColorStop(0, 'rgba(103, 232, 249, 0)');
+          g.addColorStop(0.5, 'rgba(103, 232, 249, 0.16)');
+          g.addColorStop(1, 'rgba(103, 232, 249, 0)');
+          ctx.fillStyle = g;
+          ctx.fillRect(st.x, st.y, st.w, st.h);
+        }
+
+        // Huts (Swamp)
+        for (const h of world.huts) {
+          ctx.fillStyle = '#334155';
+          ctx.beginPath(); ctx.arc(h.x + 80, h.y - 40, 68, Math.PI, 0); ctx.fill();
+          ctx.fillStyle = '#475569';
+          ctx.fillRect(h.x + 12, h.y - 40, 136, 40);
+        }
+
+        // Vines
+        ctx.strokeStyle = '#1f513b'; ctx.lineWidth = 3;
+        for (const v of world.vines) {
+          ctx.beginPath(); ctx.moveTo(v.x, v.y);
+          ctx.lineTo(v.x + Math.sin(elapsed * 1.6 + v.x) * 14, v.y + v.len); ctx.stroke();
+        }
+
+        // Physical Biome Portals
+        for (const pt of world.portals) {
+          const col = pt.targetTheme === 'crystal' ? '#67e8f9' : pt.targetTheme === 'swamp' ? '#c084fc' : '#6ee7b7';
+          ctx.fillStyle = 'rgba(4, 12, 16, 0.85)';
+          ctx.strokeStyle = col; ctx.lineWidth = 2.5;
+          ctx.beginPath(); ctx.roundRect(pt.x + 6, pt.y + 8, pt.w - 12, pt.h - 8, [30, 30, 0, 0]); ctx.fill(); ctx.stroke();
+          ctx.fillStyle = col; ctx.font = '600 11px ui-monospace, monospace'; ctx.textAlign = 'center';
+          ctx.fillText(pt.shortLabel, pt.x + pt.w * 0.5, pt.y - 12);
+        }
+
+        // Platforms
+        for (const p of world.platforms) {
+          ctx.fillStyle = world.theme === 'crystal' ? '#0f1c2e' : world.theme === 'swamp' ? '#1c182c' : '#102119';
+          ctx.fillRect(p.x, p.y, p.w, p.h);
+          if (p.kind !== 'stone') {
+            ctx.fillStyle = world.theme === 'crystal' ? '#67e8f9' : world.theme === 'swamp' ? '#7c3aed' : '#4ade80';
+            ctx.fillRect(p.x, p.y, p.w, 6);
+          }
+        }
+
+        // Glow Mushrooms (Swamp Forest area only, background removed)
+        if (world.theme === 'swamp') {
+          const spots = [[-38,-205,9],[-8,-232,6],[30,-215,10],[52,-175,6],[-58,-168,6],[8,-190,5]];
+          const swampMushrooms = [
+            [118,780,.19,1.7,330],[144,780,.31,0,285],[344,780,.24,1.7,330],[414,780,.21,3.1,200],[380,780,.46,0,285],
+            [788,780,.22,2.1,200],[754,780,.43,.5,285],[814,680,.18,1.2,330],[1038,780,.26,1.4,330],
+            [1158,755,.22,.4,200],[1318,755,.29,1.8,285],[1524,705,.19,.9,330],[1492,705,.35,2.6,285],[1956,755,.24,1.5,200],
+            [1322,365,.17,2.2,200],[1292,365,.27,.8,285],[2416,350,.21,2.9,330],[2382,350,.4,1.1,285],[2958,315,.25,.3,200],
+            [1380,1190,.17,.4,285],[1354,1190,.25,1.9,200],[1840,1150,.29,2.7,330],[2592,1320,.28,1.7,330],[2684,1320,.33,3.1,200],[2638,1320,.54,.2,285],
+            [2236,780,.22,2.8,330],[2202,780,.42,1.3,200],[2982,780,.36,.6,285],[3204,780,.21,2.1,200],
+            [3558,780,.24,1.7,330],[3515,780,.5,0,285],[4352,780,.22,.8,285],[4312,780,.4,2.4,200]
+          ];
+          for (const [mx, my, ms, mph, mhue] of swampMushrooms) {
+            if (mx + 190 * ms + 60 < camera.x || mx - 190 * ms - 60 > camera.x + viewW) continue;
+            ctx.fillStyle = 'rgba(0,0,0,0.42)';
+            ctx.beginPath(); ctx.ellipse(mx, my + 1, 95 * ms, Math.max(2.5, 8.5 * ms), 0, 0, Math.PI * 2); ctx.fill();
+
+            ctx.save();
+            ctx.translate(mx, my);
+            ctx.scale(ms, ms);
+            const g = ctx.createRadialGradient(0, -190, 10, 0, -190, 170);
+            g.addColorStop(0, `hsla(${mhue},90%,60%,${0.22 + 0.06 * Math.sin(elapsed * 2 + mph)})`);
+            g.addColorStop(1, `hsla(${mhue},90%,60%,0)`);
+            ctx.fillStyle = g;
+            ctx.fillRect(-200, -380, 400, 400);
+            ctx.rotate(Math.sin(elapsed * 1.1 + mph) * 0.035);
+            const sg = ctx.createLinearGradient(-18, 0, 18, 0);
+            sg.addColorStop(0, '#8b8576'); sg.addColorStop(0.45, '#d6cfbf'); sg.addColorStop(1, '#6f6a5e');
+            ctx.fillStyle = sg;
+            ctx.beginPath(); ctx.moveTo(-20, 0); ctx.bezierCurveTo(-13, -60, -10, -100, -13, -140);
+            ctx.lineTo(13, -140); ctx.bezierCurveTo(10, -100, 13, -60, 20, 0); ctx.quadraticCurveTo(0, 9, -20, 0); ctx.fill();
+            ctx.fillStyle = `hsl(${mhue},40%,12%)`;
+            ctx.beginPath(); ctx.ellipse(0, -140, 82, 14, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = `hsla(${mhue},50%,60%,0.35)`; ctx.lineWidth = 1;
+            for (let i = -7; i <= 7; i++) { ctx.beginPath(); ctx.moveTo(i * 10, -142); ctx.lineTo(i * 11, -128); ctx.stroke(); }
+            const cg = ctx.createRadialGradient(-20, -235, 10, 0, -190, 110);
+            cg.addColorStop(0, `hsl(${mhue},55%,42%)`); cg.addColorStop(1, `hsl(${mhue},60%,16%)`);
+            ctx.fillStyle = cg;
+            ctx.beginPath(); ctx.moveTo(-88, -140); ctx.bezierCurveTo(-92, -230, -42, -264, 0, -264);
+            ctx.bezierCurveTo(42, -264, 92, -230, 88, -140); ctx.quadraticCurveTo(0, -152, -88, -140); ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(-66, -200); ctx.bezierCurveTo(-60, -235, -35, -252, -10, -256); ctx.stroke();
+            spots.forEach(([sx, sy, r], i) => {
+              const a = 0.55 + 0.45 * Math.sin(elapsed * 2.2 + mph + i);
+              const sg2 = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 3.2);
+              sg2.addColorStop(0, `hsla(${mhue + 110},100%,78%,${a})`); sg2.addColorStop(1, `hsla(${mhue + 110},100%,70%,0)`);
+              ctx.fillStyle = sg2; ctx.beginPath(); ctx.arc(sx, sy, r * 3.2, 0, Math.PI * 2); ctx.fill();
+              ctx.fillStyle = `hsla(${mhue + 110},100%,85%,${0.6 + 0.4 * a})`;
+              ctx.beginPath(); ctx.arc(sx, sy, r * 0.8, 0, Math.PI * 2); ctx.fill();
+            });
+            ctx.restore();
+          }
+        }
+
+        // Bounce Pads
+        for (const bp of world.bouncePads) {
+          ctx.fillStyle = '#bef264';
+          ctx.beginPath(); ctx.ellipse(bp.x + bp.w * 0.5, bp.y + 10, bp.w * 0.5, 11, 0, Math.PI, 0); ctx.fill();
+        }
+
+        // Waters
+        for (const w of world.waters) {
+          ctx.fillStyle = world.theme === 'swamp' ? 'rgba(56, 189, 248, 0.28)' : 'rgba(52, 211, 153, 0.28)';
+          ctx.fillRect(w.x, w.y, w.w, w.h);
+        }
+
+        // Thorns
+        ctx.fillStyle = '#f43f5e';
+        for (const t of world.thorns) {
+          for (let sx = t.x; sx < t.x + t.w - 8; sx += 16) {
+            ctx.beginPath(); ctx.moveTo(sx, t.y + t.h); ctx.lineTo(sx + 8, t.y); ctx.lineTo(sx + 16, t.y + t.h); ctx.fill();
+          }
+        }
+
+        // Orbs
+        for (const o of world.orbs) {
+          if (!o.alive) continue;
+          ctx.fillStyle = '#fde047';
+          ctx.beginPath(); ctx.arc(o.x, o.y + Math.sin(elapsed * 3 + o.x) * 4, 8, 0, Math.PI * 2); ctx.fill();
+        }
+
+        // Enemies (white hitFlash!)
+        for (const e of world.enemies) {
+          if (!e.alive) continue;
+          ctx.fillStyle = e.hitFlash > 0 ? '#ffffff' : e.kind === 'crawler' ? '#34d399' : '#fb923c';
+          ctx.beginPath(); ctx.roundRect(e.x, e.y, e.w, e.h, 8); ctx.fill();
+          ctx.fillStyle = '#04100d';
+          ctx.beginPath(); ctx.arc(e.x + e.w * 0.35, e.y + 12, 3, 0, Math.PI * 2);
+          ctx.arc(e.x + e.w * 0.65, e.y + 12, 3, 0, Math.PI * 2); ctx.fill();
+        }
+
+        // Player Warrior Character
+        (function drawWarriorCharacter(x, y, time, facing) {
+          ctx.save();
+          const breatheY = Math.abs(player.vx) < 20 && player.grounded ? Math.sin(time * 0.08) * 3 : 0;
+          ctx.translate(x, y);
+          ctx.scale(facing * 0.48, 0.48);
+          ctx.translate(0, -68 + breatheY);
+
+          const stride = player.grounded && Math.abs(player.vx) > 20 ? Math.sin(time * 0.28) * 10 : 0;
+          const legDrop = !player.grounded ? -6 : 0;
+          const wave = Math.sin(time * 0.1) * 3 - Math.min(12, Math.abs(player.vx) * 0.03);
+
+          // 1. Dark Silhouetted Legs
+          ctx.fillStyle = '#0f131a';
+          ctx.beginPath();
+          ctx.moveTo(-10, 42); ctx.lineTo(-4, 42);
+          ctx.lineTo(-8 + stride, 68 + legDrop); ctx.lineTo(-14 + stride, 65 + legDrop);
+          ctx.closePath(); ctx.fill();
+
+          ctx.beginPath();
+          ctx.moveTo(4, 42); ctx.lineTo(12, 42);
+          ctx.lineTo(16 - stride, 68 + legDrop); ctx.lineTo(9 - stride, 68 + legDrop);
+          ctx.closePath(); ctx.fill();
+
+          // 2. Layered Dark Blue Cloak
+          ctx.fillStyle = player.dashTimer > 0 ? '#0ea5e9' : '#1e2b3c';
+          ctx.beginPath();
+          ctx.moveTo(-14, 14); ctx.lineTo(14, 14);
+          ctx.lineTo(24 + wave, 52); ctx.lineTo(8 + wave * 0.4, 46);
+          ctx.lineTo(0 + wave * 0.3, 54); ctx.lineTo(-10 + wave * 0.4, 46);
+          ctx.lineTo(-26 + wave, 52);
+          ctx.closePath(); ctx.fill();
+
+          ctx.fillStyle = player.dashTimer > 0 ? '#38bdf8' : '#2c3e55';
+          ctx.strokeStyle = '#090c12'; ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(-15, 12); ctx.quadraticCurveTo(0, 18, 15, 12);
+          ctx.lineTo(22 + wave, 46); ctx.lineTo(12 + wave * 0.35, 40);
+          ctx.lineTo(2 + wave * 0.25, 48); ctx.lineTo(-8 + wave * 0.35, 40);
+          ctx.lineTo(-22 + wave, 46);
+          ctx.closePath(); ctx.fill(); ctx.stroke();
+
+          // 3. Glowing Cyan Needle Sword
+          ctx.save();
+          if (slash.active) {
+            const p = 1 - slash.timer / slash.duration;
+            ctx.translate(10, 26);
+            ctx.rotate(Math.PI - 0.85 + p * 1.65);
+          } else {
+            ctx.translate(-8, 30);
+            ctx.rotate(-Math.PI / 6 + Math.sin(time * 0.08) * 0.04);
+          }
+          ctx.fillStyle = '#34495e'; ctx.fillRect(0, -3, 12, 6);
+          ctx.fillStyle = '#5dade2'; ctx.fillRect(-2, -8, 4, 16);
+          ctx.shadowColor = '#00e5ff'; ctx.shadowBlur = 18;
+          ctx.fillStyle = '#a3f7ff'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.moveTo(-2, -5); ctx.lineTo(-65, 0); ctx.lineTo(-2, 5); ctx.closePath();
+          ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(-4, 0); ctx.lineTo(-55, 0); ctx.stroke();
+          ctx.restore();
+
+          // 4. White Mask & Curved Horns
+          ctx.fillStyle = '#f4f6f8'; ctx.strokeStyle = '#090c12'; ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(-16, -12);
+          ctx.bezierCurveTo(-26, -30, -24, -48, -10, -56);
+          ctx.bezierCurveTo(-15, -42, -14, -28, -8, -22);
+          ctx.quadraticCurveTo(0, -24, 8, -22);
+          ctx.bezierCurveTo(14, -28, 15, -42, 10, -56);
+          ctx.bezierCurveTo(24, -48, 26, -30, 16, -12);
+          ctx.bezierCurveTo(22, 6, 14, 18, 0, 18);
+          ctx.bezierCurveTo(-14, 18, -22, 6, -16, -12);
+          ctx.closePath(); ctx.fill(); ctx.stroke();
+
+          // 5. Deep Black Eyes
+          ctx.fillStyle = '#090c12';
+          ctx.beginPath(); ctx.ellipse(-6, -1, 4.5, 7.5, -0.08, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.ellipse(9, -1, 4, 7, 0.08, 0, Math.PI * 2); ctx.fill();
+
+          ctx.restore();
+        })(player.x + player.w * 0.5, player.y + player.h, elapsed * 60, player.facing);
+
+        // Crescent Slash
+        if (slash.active) {
+          const p = 1 - slash.timer / slash.duration;
+          ctx.save();
+          ctx.translate(slash.x, slash.y);
+          let a0 = -1.1, a1 = 1.1;
+          if (slash.dir === 'left') { a0 = Math.PI - 1.1; a1 = Math.PI + 1.1; }
+          else if (slash.dir === 'up') { a0 = -Math.PI * 0.5 - 1.1; a1 = -Math.PI * 0.5 + 1.1; }
+          else if (slash.dir === 'down') { a0 = Math.PI * 0.5 - 1.1; a1 = Math.PI * 0.5 + 1.1; }
+          ctx.strokeStyle = `rgba(224, 242, 254, ${1 - p * 0.7})`;
+          ctx.lineWidth = 10 * (1 - p * 0.4);
+          ctx.beginPath(); ctx.arc(0, 0, slash.radius, a0, a1); ctx.stroke();
+          ctx.restore();
+        }
+
+        // Waves
+        for (const wv of waves) {
+          ctx.fillStyle = wv.color;
+          ctx.beginPath(); ctx.ellipse(wv.x, wv.y, 12, 32, 0, 0, Math.PI * 2); ctx.fill();
+        }
+
+        // Particles & Floating Text
+        for (const p of particles) {
+          ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+          ctx.fillStyle = p.color;
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        for (const f of floatTexts) {
+          ctx.globalAlpha = Math.max(0, f.life / f.maxLife);
+          ctx.fillStyle = f.color; ctx.font = '700 12px ui-monospace, monospace'; ctx.textAlign = 'center';
+          ctx.fillText(f.text, f.x, f.y);
+        }
+        ctx.globalAlpha = 1;
+
+        ctx.restore();
+      }
+
+      // === SVG MAP RENDERING (MINI-MAP + FULL WORLD MAP) ===
+      function renderMapSvg(svgEl, svgW, svgH, pad, isFull) {
+        const scale = Math.min((svgW - pad * 2) / world.width, (svgH - pad * 2) / world.height);
+        const ox = (svgW - world.width * scale) * 0.5;
+        const oy = (svgH - world.height * scale) * 0.5;
+        const ns = 'http://www.w3.org/2000/svg';
+        svgEl.innerHTML = '';
+
+        const toRect = (r) => ({ x: ox + r.x * scale, y: oy + r.y * scale, w: Math.max(isFull ? 36 : 11, r.w * scale - 2), h: Math.max(isFull ? 28 : 9, r.h * scale - 2) });
+        const curId = roomManager.currentRoom ? roomManager.currentRoom.id : world.rooms[0].id;
+        const visible = (r) => !r.isSecret || r.discovered || r.visited;
+
+        // Connections
+        const drawn = new Set();
+        for (const r of world.rooms) {
+          if (!visible(r)) continue;
+          const a = toRect(r);
+          for (const adjId of r.adj) {
+            const k = r.id < adjId ? `${r.id}:${adjId}` : `${adjId}:${r.id}`;
+            if (drawn.has(k)) continue;
+            const adj = world.rooms.find((x) => x.id === adjId);
+            if (!adj || !visible(adj)) continue;
+            drawn.add(k);
+            const b = toRect(adj);
+            const line = document.createElementNS(ns, 'line');
+            line.setAttribute('x1', a.x + a.w * 0.5); line.setAttribute('y1', a.y + a.h * 0.5);
+            line.setAttribute('x2', b.x + b.w * 0.5); line.setAttribute('y2', b.y + b.h * 0.5);
+            line.setAttribute('stroke', r.visited || adj.visited ? '#387d63' : '#1b3833');
+            line.setAttribute('stroke-width', isFull ? 5 : 2);
+            if (!r.visited && !adj.visited) line.setAttribute('stroke-dasharray', '3 3');
+            svgEl.appendChild(line);
+          }
+        }
+
+        // Rooms
+        for (const r of world.rooms) {
+          if (!visible(r)) continue;
+          const { x, y, w, h } = toRect(r);
+          const isCur = r.id === curId;
+          const rect = document.createElementNS(ns, 'rect');
+          rect.setAttribute('x', x); rect.setAttribute('y', y);
+          rect.setAttribute('width', w); rect.setAttribute('height', h);
+          rect.setAttribute('rx', isFull ? 4 : 1.5);
+          rect.setAttribute('fill', r.visited ? (isCur ? '#1e5447' : '#112e2a') : (r.discovered ? '#091b1d' : '#050e10'));
+          rect.setAttribute('stroke', isCur ? '#a7f3d0' : (r.visited ? '#40916c' : '#264d44'));
+          rect.setAttribute('stroke-width', isCur ? 2 : 1.2);
+          if (!r.visited) rect.setAttribute('stroke-dasharray', isFull ? '4 4' : '2 2');
+          svgEl.appendChild(rect);
+
+          if (isFull) {
+            const txt = document.createElementNS(ns, 'text');
+            txt.setAttribute('x', x + 7); txt.setAttribute('y', y + 16);
+            txt.setAttribute('fill', r.visited ? '#e6f5ee' : '#6f9489');
+            txt.setAttribute('font-size', '10.5'); txt.setAttribute('font-weight', '600');
+            txt.textContent = r.visited || r.discovered ? r.name : '???';
+            svgEl.appendChild(txt);
+          }
+
+          if (r.portalLinks) {
+            for (const lk of r.portalLinks) {
+              const col = lk.theme === 'crystal' ? '#67e8f9' : lk.theme === 'swamp' ? '#c084fc' : '#6ee7b7';
+              const dx = lk.dir.includes('E') ? 1 : lk.dir.includes('W') ? -1 : 0;
+              const dy = lk.dir.includes('N') ? -1 : lk.dir.includes('S') ? 1 : 0;
+              const x1 = x + w * (dx === 1 ? 1 : dx === -1 ? 0 : 0.5);
+              const y1 = y + h * (dy === 1 ? 1 : dy === -1 ? 0 : 0.5);
+              const len = isFull ? 20 : 7;
+              const ln = document.createElementNS(ns, 'line');
+              ln.setAttribute('x1', x1); ln.setAttribute('y1', y1);
+              ln.setAttribute('x2', x1 + dx * len); ln.setAttribute('y2', y1 + dy * len);
+              ln.setAttribute('stroke', col); ln.setAttribute('stroke-width', isFull ? 2 : 1.3);
+              svgEl.appendChild(ln);
+              if (isFull) {
+                const lbl = document.createElementNS(ns, 'text');
+                lbl.setAttribute('x', x1 + dx * (len + 6)); lbl.setAttribute('y', y1 + dy * (len + 6));
+                lbl.setAttribute('fill', col); lbl.setAttribute('font-size', '10'); lbl.setAttribute('font-weight', '600');
+                lbl.setAttribute('text-anchor', dx < 0 ? 'end' : 'start');
+                lbl.textContent = lk.label;
+                svgEl.appendChild(lbl);
+              }
+            }
+          }
+
+          if (isCur) {
+            const nx = Math.max(0, Math.min(1, (player.x + 14 - r.x) / r.w));
+            const ny = Math.max(0, Math.min(1, (player.y + 23 - r.y) / r.h));
+            const dot = document.createElementNS(ns, 'circle');
+            dot.setAttribute('cx', x + 2 + nx * (w - 4));
+            dot.setAttribute('cy', y + 2 + ny * (h - 4));
+            dot.setAttribute('r', isFull ? 5 : 3);
+            dot.setAttribute('fill', '#ecfdf5'); dot.setAttribute('stroke', '#04100d');
+            svgEl.appendChild(dot);
+          }
+        }
+      }
+
+      function syncHud() {
+        document.getElementById('soulFill').style.height = `${Math.round((player.soul / player.maxSoul) * 100)}%`;
+        document.getElementById('soulVal').textContent = String(player.soul);
+        const masksEl = document.getElementById('masksRow');
+        if (masksEl.childElementCount !== player.maxHp || masksEl.dataset.hp !== String(player.hp)) {
+          masksEl.dataset.hp = String(player.hp);
+          masksEl.innerHTML = Array.from({ length: player.maxHp }, (_, i) =>
+            `<svg width="20" height="24" viewBox="0 0 28 32"><path d="M6 10 L4 3 L10 8 L18 8 L24 3 L22 10 C25 14 24 24 14 29 C4 24 3 14 6 10 Z" fill="${i < player.hp ? '#eef7f3' : '#0b191b'}" stroke="${i < player.hp ? '#74c69d' : '#2a4944'}" stroke-width="2"/></svg>`
+          ).join('');
+        }
+        const r = roomManager.currentRoom || world.rooms[0];
+        document.getElementById('roomLabel').textContent = r.name;
+        document.getElementById('regionLabel').textContent = world.title;
+        document.getElementById('essenceLabel').textContent = `${player.essence} Essence`;
+        document.getElementById('levelLabel').textContent = `Level ${player.level}: ${LEVEL_TITLES[player.level - 1]}`;
+        const curFloor = LEVEL_THRESHOLDS[player.level - 1] || 0;
+        const nxtFloor = LEVEL_THRESHOLDS[player.level] || curFloor + 100;
+        const into = player.xp - curFloor;
+        const span = Math.max(1, nxtFloor - curFloor);
+        document.getElementById('xpLabel').textContent = player.level >= 10 ? 'MAX' : `${into}/${span} XP`;
+        document.getElementById('xpFill').style.transform = `scaleX(${player.level >= 10 ? 1 : Math.max(0.03, into / span)})`;
+        document.getElementById('attackLabel').textContent = `Level ${player.level} ${slash.name}`;
+        const secs = Math.floor(elapsed);
+        document.getElementById('timerTxt').textContent = `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
+        document.getElementById('miniRegion').textContent = world.title.replace('Lush Green ', '').replace('Crystal ', '').replace('Mystic ', '');
+        document.getElementById('miniCoord').textContent = `[${r.gx},${r.gy}] · M`;
+        renderMapSvg(document.getElementById('miniMapSvg'), 156, 90, 11, false);
+        if (mapOpen) {
+          const visitedCnt = world.rooms.filter((x) => x.visited).length;
+          document.getElementById('fullMapTitle').textContent = `${world.title} · Interconnected Map`;
+          document.getElementById('fullMapMeta').textContent = `${visitedCnt} / ${world.rooms.length} Chambers Explored`;
+          renderMapSvg(document.getElementById('fullMapSvg'), 660, 380, 42, true);
+        }
+      }
+
+      function toggleMap(force) {
+        mapOpen = typeof force === 'boolean' ? force : !mapOpen;
+        document.getElementById('mapModal').classList.toggle('open', mapOpen);
+        syncHud();
+        if (!mapOpen) canvas.focus();
+      }
+      document.getElementById('btnMap').addEventListener('click', () => toggleMap());
+      document.getElementById('miniMapBtn').addEventListener('click', () => toggleMap(true));
+      document.getElementById('btnCloseMap').addEventListener('click', () => toggleMap(false));
+      document.getElementById('btnMute').addEventListener('click', () => {
+        audio.muted = !audio.muted;
+        document.getElementById('btnMute').textContent = audio.muted ? 'Audio: Off' : 'Audio: On';
+        canvas.focus();
+      });
+
+      // === MAIN LOOP ===
+      let last = performance.now();
+      function loop(now) {
+        const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+        last = now;
+        if (!mapOpen) {
+          elapsed += dt;
+          step(dt);
+        }
+        for (const k in pressed) pressed[k] = false;
+        render();
+        syncHud();
+        requestAnimationFrame(loop);
+      }
+      requestAnimationFrame(loop);
+    })();
+  </script>
+</body>
+</html>

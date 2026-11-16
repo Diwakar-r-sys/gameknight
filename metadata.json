@@ -1,0 +1,6 @@
+{
+  "name": "Mossgrotto",
+  "description": "Precision 2D Metroidvania prototype set in a bioluminescent moss cavern with tight movement, pogo combat, multi-tier parallax, and modular Unity C# architecture.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

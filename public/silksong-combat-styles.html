@@ -1,0 +1,1550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hollow Knight: Silksong — 14-Style Combat System</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #060b10;
+      color: #e6f0ec;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      user-select: none;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      cursor: crosshair;
+      outline: none;
+    }
+    .hud-layer {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 16px 20px;
+    }
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+    }
+    .stats-cluster {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .soul-ring {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      border: 2.5px solid #498477;
+      background: #071315;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+      font-weight: 700;
+      color: #ecfdf5;
+      position: relative;
+      overflow: hidden;
+    }
+    .soul-fill {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: #3b8e78;
+      transition: height 120ms ease-out;
+    }
+    .soul-val { position: relative; z-index: 1; }
+    .masks {
+      display: flex;
+      gap: 5px;
+      margin-bottom: 4px;
+    }
+    .mask {
+      width: 16px;
+      height: 20px;
+      clip-path: polygon(15% 25%, 0 0, 35% 18%, 65% 18%, 100% 0, 85% 25%, 95% 65%, 50% 100%, 5% 65%);
+      background: #eef7f3;
+      transition: background 120ms;
+    }
+    .mask.empty { background: #172a2d; }
+    .meta-line {
+      font-size: 12px;
+      color: #a3c4b9;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .meta-line strong { color: #fde047; }
+    .level-controls {
+      pointer-events: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn {
+      background: rgba(8, 22, 24, 0.92);
+      border: 1px solid #24443f;
+      color: #cbe5dc;
+      padding: 6px 11px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 120ms, border-color 120ms;
+    }
+    .btn:hover { background: #112c2f; border-color: #5eead4; color: #fff; }
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .bottom-hud {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: flex-start;
+    }
+    .style-bar {
+      pointer-events: auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      background: rgba(6, 18, 20, 0.92);
+      border: 1px solid #24443f;
+      border-radius: 8px;
+      padding: 5px;
+    }
+    .style-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: #9bbcb1;
+      padding: 5px 9px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    .style-btn:hover:not(:disabled) { background: #0d2224; color: #fff; }
+    .style-btn.active {
+      background: #122e31;
+      color: #ffffff;
+      border-color: rgba(255,255,255,0.4);
+    }
+    .style-btn:disabled { opacity: 0.42; cursor: not-allowed; }
+    .style-num {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+    }
+    .active-detail {
+      font-size: 12px;
+      color: #9ec2b6;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+    .charge-track {
+      width: 84px;
+      height: 7px;
+      background: #071315;
+      border: 1px solid #24443f;
+      border-radius: 99px;
+      overflow: hidden;
+    }
+    .charge-fill {
+      height: 100%;
+      width: 0%;
+      transition: width 40ms linear;
+    }
+    .controls-hint {
+      font-size: 11px;
+      color: #779c90;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="gameCanvas" tabindex="0"></canvas>
+
+  <div class="hud-layer">
+    <div class="top-bar">
+      <div class="stats-cluster">
+        <div class="soul-ring">
+          <div id="soulFill" class="soul-fill" style="height: 40%;"></div>
+          <span id="soulVal" class="soul-val">40</span>
+        </div>
+        <div>
+          <div id="masksRow" class="masks"></div>
+          <div class="meta-line">
+            <span id="levelLabel" style="color:#eef7f3;font-weight:600;">Level 1: Beginner Knight</span>
+            <span>·</span>
+            <span id="xpLabel">0/25 XP</span>
+            <span>·</span>
+            <span>Attack: <strong id="attackLabel">Hunter Slash</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="level-controls">
+        <button id="lvlDownBtn" class="btn" type="button">- Level</button>
+        <button id="lvlUpBtn" class="btn" type="button">+ Level</button>
+        <button id="unlockAllBtn" class="btn" type="button">Lv 10 All Styles</button>
+        <button id="resetBtn" class="btn" type="button">Reset</button>
+      </div>
+    </div>
+
+    <div class="bottom-hud">
+      <div id="styleBar" class="style-bar"></div>
+      <div class="active-detail">
+        <span id="styleTitle" style="font-weight:700;color:#67e8f9;">Hunter</span>
+        <span>·</span>
+        <span>Combo Key / Hold J: <strong id="holdName" style="color:#eef7f3;">Twin Needle Barrage</strong></span>
+        <span>·</span>
+        <span>S+J Pogo: <strong id="pogoName" style="color:#eef7f3;">Piercing Needle Pogo</strong></span>
+        <span id="chargeWrap" style="display:none;align-items:center;gap:6px;">
+          <span class="charge-track"><span id="chargeFill" class="charge-fill"></span></span>
+          <span id="chargePct" style="font-family:monospace;font-size:11px;color:#fff;">0%</span>
+        </span>
+      </div>
+      <div class="controls-hint">
+        A/D Move · Space/W Jump · J/Click Tap Slash · S+J Pogo (Ground/Air) · 7 Combos: Q/R/G/B/Y/U/N (or Hold J 0.6s) · V Special · K/Shift Dash · 1–7 / T Style
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const canvas = document.getElementById('gameCanvas');
+      const ctx = canvas.getContext('2d');
+
+      const COMBAT_STYLES = [
+        {
+          id: 'hunter', index: 0, hotkey: 'Q', label: 'Hunter', unlockLevel: 1,
+          color: '#67e8f9', accent: '#ecfeff',
+          holdName: 'Twin Needle Barrage', pogoName: 'Piercing Needle Pogo',
+          cooldown: 0.21, damageMult: 1.0, radiusBonus: 4, pogoBoost: 1.0, soulBonus: 0,
+        },
+        {
+          id: 'reaper', index: 1, hotkey: 'R', label: 'Reaper', unlockLevel: 1,
+          color: '#a78bfa', accent: '#ede9fe',
+          holdName: 'Reaper Scythe Cleave', pogoName: 'Heavy Reaper Smash Pogo',
+          cooldown: 0.26, damageMult: 1.25, radiusBonus: 16, pogoBoost: 1.04, soulBonus: 8,
+        },
+        {
+          id: 'wanderer', index: 2, hotkey: 'G', label: 'Wanderer', unlockLevel: 1,
+          color: '#bef264', accent: '#f7fee7',
+          holdName: 'Cyclone Flurry Spin', pogoName: 'Nimble Flick Pogo',
+          cooldown: 0.14, damageMult: 0.92, radiusBonus: -2, pogoBoost: 0.96, soulBonus: 1,
+        },
+        {
+          id: 'beast', index: 3, hotkey: 'B', label: 'Beast', unlockLevel: 1,
+          color: '#fb7185', accent: '#ffe4e6',
+          holdName: 'Savage Fury Lunge', pogoName: 'Feral Fang Dive Pogo',
+          cooldown: 0.20, damageMult: 1.18, radiusBonus: 10, pogoBoost: 1.06, soulBonus: 2,
+        },
+        {
+          id: 'witch', index: 4, hotkey: 'Y', label: 'Witch', unlockLevel: 1,
+          color: '#34d399', accent: '#d1fae5',
+          holdName: 'Silk Thread Web Nova', pogoName: 'Thread Whip Pogo',
+          cooldown: 0.23, damageMult: 1.12, radiusBonus: 22, pogoBoost: 1.02, soulBonus: 4,
+        },
+        {
+          id: 'architect', index: 5, hotkey: 'U', label: 'Architect', unlockLevel: 1,
+          color: '#fbbf24', accent: '#fef3c7',
+          holdName: 'Screw-Dash & Cog Trap', pogoName: 'Piston Drill Pogo',
+          cooldown: 0.23, damageMult: 1.15, radiusBonus: 8, pogoBoost: 1.16, soulBonus: 2,
+        },
+        {
+          id: 'shaman', index: 6, hotkey: 'N', label: 'Shaman', unlockLevel: 1,
+          color: '#f472b6', accent: '#fde047',
+          holdName: 'Soul Cataclysm Wave', pogoName: 'Arcane Rune Blast Pogo',
+          cooldown: 0.24, damageMult: 1.24, radiusBonus: 18, pogoBoost: 1.12, soulBonus: 5,
+        },
+      ];
+      const COMBO_LETTER_CODES = ['KeyQ', 'KeyR', 'KeyG', 'KeyB', 'KeyY', 'KeyU', 'KeyN'];
+
+      const LEVEL_TITLES = [
+        'Beginner Knight', 'Warrior', 'Quick Knight', 'Wall Climber', 'Double Jumper',
+        'Energy Master', 'Shadow Warrior', 'Soul Master', 'Ancient Knight', 'Ultimate Knight',
+      ];
+      const XP_THRESHOLDS = [0, 25, 60, 110, 175, 255, 350, 465, 600, 760];
+
+      // WebAudio SFX Synthesizer (Step 2 Impact Audio Hook + Combat Sounds)
+      class SoundFX {
+        constructor() { this.ctx = null; }
+        ensure() {
+          if (!this.ctx && (window.AudioContext || window.webkitAudioContext)) {
+            const Ctor = window.AudioContext || window.webkitAudioContext;
+            this.ctx = new Ctor();
+          }
+          if (this.ctx && this.ctx.state === 'suspended') {
+            this.ctx.resume().catch(() => {});
+          }
+        }
+        playSlash(pitch = 1) {
+          this.ensure();
+          if (!this.ctx) return;
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(340 * pitch, now);
+          osc.frequency.exponentialRampToValueAtTime(115 * pitch, now + 0.09);
+          gain.gain.setValueAtTime(0.14, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+          osc.connect(gain).connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.095);
+        }
+        playImpact(heavy = false) {
+          this.ensure();
+          if (!this.ctx) return;
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(heavy ? 185 : 260, now);
+          osc.frequency.exponentialRampToValueAtTime(48, now + (heavy ? 0.12 : 0.08));
+          gain.gain.setValueAtTime(heavy ? 0.24 : 0.18, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + (heavy ? 0.13 : 0.085));
+          osc.connect(gain).connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.14);
+        }
+        playPogo() {
+          this.ensure();
+          if (!this.ctx) return;
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(440, now);
+          osc.frequency.exponentialRampToValueAtTime(820, now + 0.11);
+          gain.gain.setValueAtTime(0.16, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+          osc.connect(gain).connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.13);
+        }
+        playChime() {
+          this.ensure();
+          if (!this.ctx) return;
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(660, now);
+          osc.frequency.exponentialRampToValueAtTime(990, now + 0.14);
+          gain.gain.setValueAtTime(0.12, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+          osc.connect(gain).connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.16);
+        }
+      }
+      const sfx = new SoundFX();
+
+      // Modular Silksong CombatSystem Class (7 Builds x Hold + Pogo = 14 Styles)
+      class CombatSystem {
+        constructor() {
+          this.activeStyle = COMBAT_STYLES[0];
+          this.attackCooldown = 0;
+          this.specialCooldown = 0;
+          this.chargeTimer = 0;
+          this.chargeThreshold = 0.6;
+          this.chargeNotified = false;
+          this.comboStep = 0;
+          this.comboReset = 0;
+          this.beastHits = 0;
+          this.activeAttackName = 'Hunter Slash';
+
+          this.slash = {
+            active: false, x: 0, y: 0, dir: 'right',
+            timer: 0, duration: 0.15, frame: 0,
+            styleId: 'hunter', color: '#67e8f9',
+            isHold: false, radius: 48, damage: 15,
+            hitIds: new Set(),
+          };
+          this.needles = [];
+          this.traps = [];
+          this.waves = [];
+          this.aoeRings = [];
+        }
+
+        getSpec() { return this.activeStyle; }
+        getChargeProgress() { return Math.max(0, Math.min(1, this.chargeTimer / this.chargeThreshold)); }
+        isChargeReady() { return this.chargeTimer >= this.chargeThreshold; }
+
+        selectStyle(idx, level) {
+          const spec = COMBAT_STYLES[idx];
+          if (!spec || level < spec.unlockLevel) return { ok: false, spec };
+          this.activeStyle = spec;
+          this.chargeTimer = 0;
+          this.chargeNotified = false;
+          this.activeAttackName = `${spec.label} Style`;
+          return { ok: true, spec };
+        }
+
+        cycleStyle(level) {
+          const unlocked = COMBAT_STYLES.filter((s) => level >= s.unlockLevel);
+          const pos = unlocked.findIndex((s) => s.id === this.activeStyle.id);
+          const next = unlocked[(pos + 1) % unlocked.length] || COMBAT_STYLES[0];
+          this.activeStyle = next;
+          this.chargeTimer = 0;
+          this.chargeNotified = false;
+          this.activeAttackName = `${next.label} Style`;
+          return next;
+        }
+
+        update(dt, level) {
+          if (level < this.activeStyle.unlockLevel) {
+            this.activeStyle = COMBAT_STYLES[0];
+          }
+          if (this.attackCooldown > 0) this.attackCooldown = Math.max(0, this.attackCooldown - dt);
+          if (this.specialCooldown > 0) this.specialCooldown = Math.max(0, this.specialCooldown - dt);
+          if (this.comboReset > 0) {
+            this.comboReset -= dt;
+            if (this.comboReset <= 0) this.comboStep = 0;
+          }
+          for (const ring of this.aoeRings) {
+            ring.life -= dt;
+            const p = 1 - Math.max(0, ring.life / ring.maxLife);
+            ring.radius = 18 + (ring.maxRadius - 18) * (1 - Math.pow(1 - p, 2.2));
+          }
+          this.aoeRings = this.aoeRings.filter((r) => r.life > 0);
+        }
+
+        stepCharge(dt, held) {
+          if (!held) {
+            this.chargeTimer = 0;
+            this.chargeNotified = false;
+            return { justReady: false, progress: 0 };
+          }
+          const prev = this.chargeNotified;
+          this.chargeTimer = Math.min(this.chargeThreshold + 0.2, this.chargeTimer + dt);
+          let justReady = false;
+          if (this.chargeTimer >= this.chargeThreshold && !prev) {
+            this.chargeNotified = true;
+            justReady = true;
+          }
+          return { justReady, progress: this.getChargeProgress() };
+        }
+
+        triggerPrimary(player, input, level) {
+          if (this.attackCooldown > 0) return null;
+          const spec = this.activeStyle;
+          let dir = player.facing === 1 ? 'right' : 'left';
+          let hopForGroundPogo = false;
+          if (input.up) dir = 'up';
+          else if (input.down) {
+            dir = 'down';
+            if (player.grounded) hopForGroundPogo = true;
+          }
+
+          const isDown = dir === 'down';
+          const isDash = player.dashTimer > 0;
+          let name = isDown ? spec.pogoName : dir === 'up' ? `${spec.label} Up-Slash` : `${spec.label} Slash`;
+          let dmg = Math.round((15 + level * 1.4) * spec.damageMult);
+          let radius = Math.max(38, 46 + spec.radiusBonus);
+          let duration = spec.id === 'wanderer' ? 0.115 : spec.id === 'reaper' ? 0.18 : 0.145;
+
+          if (isDash && level >= 3 && !isDown) {
+            name = level >= 7 ? `${spec.label} Shadow Dash` : `${spec.label} Dash Slash`;
+            dmg = Math.round(dmg * 1.45);
+            radius += 14;
+            player.vx = player.facing * 240;
+          } else if (level >= 9 && !isDown) {
+            this.comboStep = this.comboReset > 0 ? (this.comboStep + 1) % 3 : 0;
+            this.comboReset = 0.85;
+            name = `${spec.label} Combo ${['I', 'II', 'III'][this.comboStep]}`;
+            if (this.comboStep === 2) { dmg = Math.round(dmg * 1.5); radius += 14; }
+          }
+
+          this.attackCooldown = Math.max(0.12, spec.cooldown - (level >= 4 ? 0.02 : 0));
+          this.slash = {
+            active: true, x: 0, y: 0, dir, timer: duration, duration, frame: 0,
+            styleId: spec.id, color: spec.color, isHold: false,
+            radius, damage: dmg, hitIds: new Set(),
+          };
+          this.activeAttackName = name;
+          sfx.playSlash(spec.id === 'wanderer' ? 1.24 : spec.id === 'reaper' ? 0.82 : dir === 'down' ? 0.92 : 1.0);
+
+          if (spec.id === 'hunter' && (dir === 'left' || dir === 'right')) {
+            this.spawnNeedle(player.x + player.w * 0.5 + player.facing * 16, player.y + player.h * 0.48, player.facing, 0, Math.round(11 + level * 1.2), spec.color);
+          }
+          return { hopForGroundPogo, isDown };
+        }
+
+        triggerHoldAttack(player, input, level, styleOverrideId) {
+          if (styleOverrideId) {
+            const found = COMBAT_STYLES.find((s) => s.id === styleOverrideId);
+            if (found) this.activeStyle = found;
+          }
+          const spec = this.activeStyle;
+          let dir = player.facing === 1 ? 'right' : 'left';
+          if (input.up) dir = 'up';
+          else if (input.down) dir = 'down';
+
+          const dmg = Math.round(32 * spec.damageMult * (1 + (level - 1) * 0.07));
+          let radius = Math.max(60, 72 + spec.radiusBonus);
+          let duration = 0.21;
+          let cooldown = 0.26;
+          let aoeRadius = 0;
+          let bonusSoul = 0;
+
+          if (spec.id === 'hunter') {
+            radius = 66;
+          } else if (spec.id === 'reaper') {
+            radius = 90; duration = 0.25; aoeRadius = 92; bonusSoul = 10;
+          } else if (spec.id === 'wanderer') {
+            radius = 84; duration = 0.26; cooldown = 0.20; aoeRadius = 86;
+          } else if (spec.id === 'beast') {
+            radius = 78; duration = 0.22;
+          } else if (spec.id === 'witch') {
+            radius = 128; duration = 0.27; aoeRadius = 136;
+          } else if (spec.id === 'architect') {
+            radius = 74;
+          } else if (spec.id === 'shaman') {
+            radius = 86; aoeRadius = 120;
+          }
+
+          this.chargeTimer = 0;
+          this.chargeNotified = false;
+          this.attackCooldown = cooldown;
+          this.slash = {
+            active: true, x: 0, y: 0, dir, timer: duration, duration, frame: 0,
+            styleId: spec.id, color: spec.color, isHold: true,
+            radius, damage: dmg, hitIds: new Set(),
+          };
+          this.activeAttackName = spec.holdName;
+          sfx.playSlash(spec.id === 'wanderer' ? 1.15 : spec.id === 'reaper' ? 0.72 : 0.78);
+
+          const pcx = player.x + player.w * 0.5;
+          const pcy = player.y + player.h * 0.5;
+
+          if (spec.id === 'hunter') {
+            player.vx = player.facing * 230;
+            [-105, 0, 105].forEach((vy) => this.spawnNeedle(pcx + player.facing * 18, pcy, player.facing, vy, Math.round(dmg * 0.45), spec.color));
+          } else if (spec.id === 'reaper') {
+            player.vx = player.facing * 150;
+            this.aoeRings.push({ x: pcx, y: pcy, radius: 20, maxRadius: aoeRadius, life: 0.34, maxLife: 0.34, color: spec.color, ult: false });
+          } else if (spec.id === 'wanderer') {
+            player.vy = player.grounded ? -160 : -110;
+            player.grounded = false;
+            this.aoeRings.push({ x: pcx, y: pcy, radius: 20, maxRadius: aoeRadius, life: 0.3, maxLife: 0.3, color: spec.color, ult: false });
+          } else if (spec.id === 'beast') {
+            player.vx = player.facing * 430;
+            player.invuln = Math.max(player.invuln, 0.22);
+          } else if (spec.id === 'witch') {
+            this.aoeRings.push({ x: pcx, y: pcy, radius: 20, maxRadius: aoeRadius, life: 0.38, maxLife: 0.38, color: spec.color, ult: false });
+          } else if (spec.id === 'architect') {
+            player.vx = player.facing * 320;
+            this.traps.push({
+              kind: 'cog', x: pcx + player.facing * 24, y: pcy, vx: player.facing * 155, vy: -80,
+              radius: 20, life: 4.2, spin: 0, tick: 0, damage: Math.round(dmg * 0.52), color: spec.color,
+            });
+            this.traps.push({
+              kind: 'mine', x: pcx - player.facing * 14, y: pcy + 8, vx: -player.facing * 40, vy: -40,
+              radius: 14, life: 3.2, spin: 0, tick: 0, damage: Math.round(dmg * 0.56), color: spec.color,
+            });
+          } else if (spec.id === 'shaman') {
+            this.aoeRings.push({ x: pcx, y: pcy, radius: 20, maxRadius: aoeRadius, life: 0.4, maxLife: 0.4, color: spec.color, ult: true });
+            this.waves.push({
+              x: pcx + player.facing * 20, y: pcy, vx: player.facing * 700, facing: player.facing,
+              life: 0.9, maxLife: 0.9, damage: dmg, halfW: 28, halfH: 52, color: spec.color, ult: false, hitIds: new Set(),
+            });
+          }
+          return { dmg, spec, aoeRadius, bonusSoul };
+        }
+
+        triggerSpecial(player, level) {
+          if (level < 6 || this.specialCooldown > 0) return false;
+          const spec = this.activeStyle;
+          const isUlt = level >= 10;
+          const isAoe = level >= 8 || spec.id === 'shaman';
+          this.specialCooldown = 0.52;
+          this.activeAttackName = isUlt ? `${spec.label} Ultimate Wave` : isAoe ? `${spec.label} AoE Spell` : `${spec.label} Energy Blast`;
+          sfx.playSlash(isUlt ? 0.68 : 0.85);
+          if (isAoe) sfx.playPogo();
+
+          const pcx = player.x + player.w * 0.5;
+          const pcy = player.y + player.h * 0.5;
+          const color = isUlt ? '#fde047' : spec.color;
+          if (isAoe) {
+            this.aoeRings.push({ x: pcx, y: pcy, radius: 20, maxRadius: isUlt ? 175 : 132, life: 0.38, maxLife: 0.38, color, ult: isUlt });
+          }
+          const dirs = isUlt ? [player.facing, -player.facing] : [player.facing];
+          dirs.forEach((d) => {
+            this.waves.push({
+              x: pcx + d * 22, y: pcy, vx: d * (isUlt ? 820 : 650), facing: d,
+              life: isUlt ? 1.2 : 0.9, maxLife: isUlt ? 1.2 : 0.9,
+              damage: isUlt ? 48 : 26, halfW: isUlt ? 44 : 24, halfH: isUlt ? 105 : 34,
+              color, ult: isUlt, hitIds: new Set(),
+            });
+          });
+          return { isAoe, isUlt, radius: isUlt ? 175 : 132, damage: isUlt ? 60 : 38, color };
+        }
+
+        spawnNeedle(x, y, facing, vy, damage, color) {
+          this.needles.push({ x, y, vx: facing * 780, vy, facing, life: 0.55, damage, color, hitIds: new Set() });
+        }
+
+        getSlashHitbox() {
+          const s = this.slash;
+          if (s.isHold && (s.styleId === 'wanderer' || s.styleId === 'witch')) {
+            return { x: s.x - s.radius, y: s.y - s.radius, w: s.radius * 2, h: s.radius * 2 };
+          }
+          const reach = s.radius + 24;
+          const breadth = Math.round(s.radius * 1.62);
+          if (s.dir === 'right') return { x: s.x - 6, y: s.y - breadth * 0.5, w: reach, h: breadth };
+          if (s.dir === 'left') return { x: s.x - reach + 6, y: s.y - breadth * 0.5, w: reach, h: breadth };
+          if (s.dir === 'up') return { x: s.x - breadth * 0.5, y: s.y - reach + 6, w: breadth, h: reach };
+          return { x: s.x - breadth * 0.5, y: s.y - 6, w: breadth, h: reach };
+        }
+      }
+
+      // Arena Geometry & State
+      const WORLD = { w: 1280, h: 720 };
+      const platforms = [
+        { x: 0, y: 610, w: 1280, h: 120 },
+        { x: 140, y: 475, w: 230, h: 22 },
+        { x: 525, y: 420, w: 230, h: 22 },
+        { x: 910, y: 475, w: 230, h: 22 },
+        { x: 320, y: 295, w: 200, h: 20 },
+        { x: 760, y: 295, w: 200, h: 20 },
+      ];
+      const spikes = [
+        { x: 420, y: 590, w: 140, h: 20 },
+        { x: 720, y: 590, w: 140, h: 20 },
+      ];
+
+      function createEnemies() {
+        return [
+          { id: 'e1', kind: 'crawler', x: 220, y: 439, w: 36, h: 36, vx: 75, vy: 0, hp: 60, maxHp: 60, facing: 1, flash: 0, knockVx: 0, knockTimer: 0, alive: true, respawn: 0, minX: 150, maxX: 360 },
+          { id: 'e2', kind: 'flyer', x: 620, y: 260, w: 38, h: 38, vx: 0, vy: 0, hp: 75, maxHp: 75, facing: -1, flash: 0, knockVx: 0, knockTimer: 0, alive: true, respawn: 0, homeX: 640, homeY: 250 },
+          { id: 'e3', kind: 'shieldbearer', x: 990, y: 427, w: 46, h: 48, vx: 50, vy: 0, hp: 110, maxHp: 110, facing: -1, flash: 0, knockVx: 0, knockTimer: 0, alive: true, respawn: 0, minX: 920, maxX: 1130 },
+          { id: 'e4', kind: 'crawler', x: 600, y: 574, w: 36, h: 36, vx: -85, vy: 0, hp: 65, maxHp: 65, facing: -1, flash: 0, knockVx: 0, knockTimer: 0, alive: true, respawn: 0, minX: 565, maxX: 715 },
+        ];
+      }
+
+      const combat = new CombatSystem();
+      let level = 1;
+      let xp = 0;
+      let soul = 40;
+      let enemies = createEnemies();
+      let particles = [];
+      let floats = [];
+      let hitstop = 0;
+      let shakeTime = 0;
+      let shakeMag = 0;
+      let time = 0;
+
+      const player = {
+        x: 200, y: 564, w: 28, h: 46, vx: 0, vy: 0,
+        facing: 1, grounded: false, airJumps: 1,
+        dashTimer: 0, dashCd: 0, recoilTimer: 0,
+        hp: 5, maxHp: 5, invuln: 0, runCycle: 0,
+        animState: 'idle', animTimer: 0,
+      };
+
+      const keys = {};
+      const pressed = {};
+      let attackReleasedFlag = false;
+
+      window.addEventListener('keydown', (e) => {
+        if (!keys[e.code]) pressed[e.code] = true;
+        keys[e.code] = true;
+        if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+          e.preventDefault();
+        }
+      });
+      window.addEventListener('keyup', (e) => {
+        if (['KeyJ', 'KeyX'].includes(e.code)) attackReleasedFlag = true;
+        keys[e.code] = false;
+      });
+      canvas.addEventListener('mousedown', (e) => {
+        canvas.focus();
+        if (e.button === 0) {
+          if (!keys['MouseLeft']) pressed['MouseLeft'] = true;
+          keys['MouseLeft'] = true;
+        }
+      });
+      window.addEventListener('mouseup', (e) => {
+        if (e.button === 0) {
+          if (keys['MouseLeft']) attackReleasedFlag = true;
+          keys['MouseLeft'] = false;
+        }
+      });
+
+      function rectsOverlap(a, b) {
+        return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+      }
+
+      function circleRect(cx, cy, r, rect) {
+        const nx = Math.max(rect.x, Math.min(cx, rect.x + rect.w));
+        const ny = Math.max(rect.y, Math.min(cy, rect.y + rect.h));
+        const dx = cx - nx, dy = cy - ny;
+        return dx * dx + dy * dy <= r * r;
+      }
+
+      function setLevel(nextLvl) {
+        level = Math.max(1, Math.min(10, nextLvl));
+        xp = XP_THRESHOLDS[level - 1];
+        renderStyleBar();
+        syncHud();
+      }
+
+      function addXP(amount) {
+        xp += amount;
+        while (level < 10 && xp >= XP_THRESHOLDS[level]) {
+          level += 1;
+          sfx.playChime();
+          spawnFloat(player.x + player.w * 0.5, player.y - 26, `LEVEL ${level}: ${LEVEL_TITLES[level - 1]}!`, '#fde047');
+          spawnBurst(player.x + player.w * 0.5, player.y + player.h * 0.5, 24, '#fde047', 240);
+          renderStyleBar();
+        }
+      }
+
+      function spawnBurst(x, y, count, color, speed = 240) {
+        for (let i = 0; i < count; i++) {
+          const ang = Math.random() * Math.PI * 2;
+          const spd = speed * (0.4 + Math.random() * 0.7);
+          particles.push({
+            x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 35,
+            size: 2.2 + Math.random() * 2.8, life: 0.25 + Math.random() * 0.2, maxLife: 0.45, color,
+          });
+        }
+      }
+
+      function spawnDirectionalBurst(x, y, dx, dy, count, color) {
+        const base = Math.atan2(dy, dx);
+        for (let i = 0; i < count; i++) {
+          const ang = base + (Math.random() - 0.5) * 1.2;
+          const spd = 160 + Math.random() * 200;
+          particles.push({
+            x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd - 20,
+            size: 2.4 + Math.random() * 2.4, life: 0.22 + Math.random() * 0.16, maxLife: 0.38,
+            color: i % 3 === 0 ? '#ffffff' : color,
+          });
+        }
+      }
+
+      function spawnFloat(x, y, text, color) {
+        floats.push({ x, y, text, color, life: 0.75, maxLife: 0.75 });
+      }
+
+      // Mandatory 5-Step Combat Juice & Attack Feedback on Hit
+      function hitEnemy(enemy, dmg, dirX, dirY, heavy = false, recoil = false) {
+        if (!enemy.alive) return;
+        const spec = combat.getSpec();
+        const pcx = player.x + player.w * 0.5;
+        const ecx = enemy.x + enemy.w * 0.5;
+        const ecy = enemy.y + enemy.h * 0.5;
+
+        // 1. White Flash (3-4 frames)
+        enemy.flash = 4 / 60;
+        // 2. Impact Audio Hook
+        sfx.playImpact(heavy);
+        // 3. Particle Blast (10-15 directional sparks)
+        spawnDirectionalBurst(ecx, ecy, dirX, dirY, heavy ? 15 : 12, spec.color);
+        // 4. Knockback + Player Recoil
+        const kDir = Math.abs(dirX) > 0.2 ? Math.sign(dirX) : pcx < ecx ? 1 : -1;
+        enemy.knockVx = kDir * (heavy ? 260 : 190);
+        enemy.knockTimer = 0.16;
+        if (recoil && player.dashTimer <= 0) {
+          player.vx = -kDir * (heavy ? 210 : 175);
+          player.recoilTimer = 0.085;
+        }
+        // 5. Hit-Stop Freeze + Screen Shake
+        hitstop = Math.max(hitstop, (heavy ? 3 : 2.5) / 60);
+        shakeMag = Math.max(shakeMag, heavy ? 7.5 : 4.8);
+        shakeTime = Math.max(shakeTime, 0.16);
+
+        enemy.hp = Math.max(0, enemy.hp - dmg);
+        soul = Math.min(100, soul + 12 + spec.soulBonus);
+        spawnFloat(ecx, enemy.y - 10, `-${dmg}`, spec.color);
+
+        if (spec.id === 'beast') {
+          combat.beastHits += 1;
+          if (combat.beastHits >= 3) {
+            combat.beastHits = 0;
+            if (player.hp < player.maxHp) player.hp += 1;
+            spawnFloat(pcx, player.y - 24, '+1 LIFESTEAL!', '#fb7185');
+            spawnBurst(pcx, player.y + player.h * 0.5, 14, '#fb7185', 180);
+          }
+        }
+
+        if (enemy.hp <= 0) {
+          enemy.alive = false;
+          enemy.respawn = 2.4;
+          spawnBurst(ecx, ecy, 28, '#6ee7b7', 290);
+          addXP(35);
+        }
+      }
+
+      function executePogoBounce() {
+        const spec = combat.getSpec();
+        const pcx = player.x + player.w * 0.5;
+        const pFeet = player.y + player.h;
+        player.vy = -590 * spec.pogoBoost;
+        player.airJumps = 1;
+        player.dashTimer = 0;
+        hitstop = Math.max(hitstop, 0.045);
+        shakeMag = Math.max(shakeMag, 4.8);
+        shakeTime = Math.max(shakeTime, 0.14);
+        sfx.playPogo();
+        spawnBurst(pcx, pFeet + 4, 14, spec.color, 210);
+
+        if (spec.id === 'reaper') {
+          soul = Math.min(100, soul + 8);
+          combat.aoeRings.push({ x: pcx, y: pFeet + 12, radius: 18, maxRadius: 68, life: 0.32, maxLife: 0.32, color: spec.color, ult: false });
+        } else if (spec.id === 'wanderer') {
+          combat.attackCooldown = Math.min(combat.attackCooldown, 0.08);
+        } else if (spec.id === 'witch') {
+          combat.aoeRings.push({ x: pcx, y: pFeet + 10, radius: 18, maxRadius: 82, life: 0.32, maxLife: 0.32, color: spec.color, ult: false });
+          enemies.forEach((e) => {
+            if (e.alive && !combat.slash.hitIds.has(e.id) && circleRect(pcx, pFeet + 10, 82, e)) {
+              combat.slash.hitIds.add(e.id);
+              hitEnemy(e, 14, 0, 1, false, false);
+            }
+          });
+        } else if (spec.id === 'architect') {
+          combat.traps.push({
+            kind: 'mine', x: pcx, y: pFeet + 8, vx: 0, vy: 120,
+            radius: 14, life: 3.2, spin: 0, tick: 0, damage: 18, color: spec.color,
+          });
+        } else if (spec.id === 'shaman') {
+          combat.aoeRings.push({ x: pcx, y: pFeet + 14, radius: 18, maxRadius: 96, life: 0.36, maxLife: 0.36, color: spec.color, ult: true });
+          enemies.forEach((e) => {
+            if (e.alive && !combat.slash.hitIds.has(e.id) && circleRect(pcx, pFeet + 14, 96, e)) {
+              combat.slash.hitIds.add(e.id);
+              hitEnemy(e, 18, 0, 1, true, false);
+            }
+          });
+        }
+      }
+
+      function positionSlash() {
+        const pcx = player.x + player.w * 0.5;
+        const pcy = player.y + player.h * 0.5;
+        const s = combat.slash;
+        if (s.dir === 'right') { s.x = pcx + 14; s.y = pcy; }
+        else if (s.dir === 'left') { s.x = pcx - 14; s.y = pcy; }
+        else if (s.dir === 'up') { s.x = pcx; s.y = pcy - 16; }
+        else { s.x = pcx; s.y = pcy + 16; }
+      }
+
+      // Horned Warrior Character Renderer (From User Spec)
+      function drawWarriorCharacter(x, y, timeMs, facing, state, chargeProgress, chargeColor, animProgress) {
+        const frameTime = timeMs * 60;
+        const breatheY = state === 'idle' ? Math.sin(frameTime * 0.08) * 3 : 0;
+        const wave = Math.sin(frameTime * 0.1) * 3 - Math.min(12, Math.abs(player.vx) * 0.025);
+        const stride = state === 'run' ? Math.sin(player.runCycle) * 12 : 0;
+
+        ctx.save();
+        ctx.translate(x + player.w * 0.5, y + player.h);
+        ctx.scale(facing, 1);
+
+        // 0.6s Hold-Attack Charging Aura
+        if (chargeProgress > 0.12) {
+          const ready = chargeProgress >= 1;
+          const auraR = 22 + chargeProgress * 18 + Math.sin(timeMs * (ready ? 26 : 14)) * 3;
+          const grad = ctx.createRadialGradient(0, -24, 4, 0, -24, auraR * 1.35);
+          grad.addColorStop(0, ready ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.22)');
+          grad.addColorStop(0.55, `${chargeColor}55`);
+          grad.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(0, -24, auraR * 1.35, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = ready ? '#ffffff' : chargeColor;
+          ctx.lineWidth = ready ? 2.4 : 1.6;
+          ctx.beginPath();
+          ctx.arc(0, -24, auraR * 0.86, timeMs * 7, timeMs * 7 + Math.PI * 2 * Math.min(1, chargeProgress));
+          ctx.stroke();
+        }
+
+        ctx.scale(0.48, 0.48);
+        ctx.translate(0, -68 + breatheY);
+
+        // 1. Dark Legs
+        ctx.fillStyle = '#0f131a';
+        ctx.beginPath();
+        ctx.moveTo(-10, 42); ctx.lineTo(-4, 42); ctx.lineTo(-8 + stride, 68); ctx.lineTo(-14 + stride, 65); ctx.closePath(); ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(4, 42); ctx.lineTo(12, 42); ctx.lineTo(16 - stride, 68); ctx.lineTo(9 - stride, 68); ctx.closePath(); ctx.fill();
+
+        // 2. Layered Dark Blue Cloak
+        const dashing = player.dashTimer > 0;
+        ctx.fillStyle = dashing ? '#0ea5e9' : '#1e2b3c';
+        ctx.beginPath();
+        ctx.moveTo(-14, 14); ctx.lineTo(14, 14);
+        ctx.lineTo(24 + wave, 52); ctx.lineTo(8 + wave * 0.4, 46);
+        ctx.lineTo(0 + wave * 0.3, 54); ctx.lineTo(-10 + wave * 0.4, 46);
+        ctx.lineTo(-26 + wave, 52); ctx.closePath(); ctx.fill();
+
+        ctx.fillStyle = dashing ? '#38bdf8' : '#2c3e55';
+        ctx.strokeStyle = '#090c12'; ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-15, 12); ctx.quadraticCurveTo(0, 18, 15, 12);
+        ctx.lineTo(22 + wave, 46); ctx.lineTo(12 + wave * 0.35, 40);
+        ctx.lineTo(2 + wave * 0.25, 48); ctx.lineTo(-8 + wave * 0.35, 40);
+        ctx.lineTo(-22 + wave, 46); ctx.closePath(); ctx.fill(); ctx.stroke();
+
+        // 3. Glowing Cyan Needle Sword
+        ctx.save();
+        if (state === 'attack') {
+          ctx.translate(10, 26);
+          ctx.rotate(Math.PI - 0.85 + animProgress * 1.65);
+        } else if (dashing) {
+          ctx.translate(6, 28); ctx.rotate(Math.PI);
+        } else {
+          ctx.translate(-8, 30); ctx.rotate(-Math.PI / 6 + Math.sin(frameTime * 0.08) * 0.04);
+        }
+        ctx.fillStyle = '#34495e'; ctx.fillRect(0, -3, 12, 6);
+        ctx.fillStyle = '#5dade2'; ctx.fillRect(-2, -8, 4, 16);
+        ctx.shadowColor = '#00e5ff'; ctx.shadowBlur = 18;
+        ctx.fillStyle = '#a3f7ff'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(-2, -5); ctx.lineTo(-65, 0); ctx.lineTo(-2, 5); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-4, 0); ctx.lineTo(-55, 0); ctx.stroke();
+        ctx.restore();
+
+        // 4. White Mask & Curved Horns
+        ctx.fillStyle = '#f4f6f8'; ctx.strokeStyle = '#090c12'; ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(-16, -12);
+        ctx.bezierCurveTo(-26, -30, -24, -48, -10, -56);
+        ctx.bezierCurveTo(-15, -42, -14, -28, -8, -22);
+        ctx.quadraticCurveTo(0, -24, 8, -22);
+        ctx.bezierCurveTo(14, -28, 15, -42, 10, -56);
+        ctx.bezierCurveTo(24, -48, 26, -30, 16, -12);
+        ctx.bezierCurveTo(22, 6, 14, 18, 0, 18);
+        ctx.bezierCurveTo(-14, 18, -22, 6, -16, -12);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+
+        // 5. Hollow Knight Style Deep Black Eyes
+        ctx.fillStyle = '#090c12';
+        ctx.beginPath(); ctx.ellipse(-6, -1, 4.5, 7.5, -0.08, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(9, -1, 4, 7, 0.08, 0, Math.PI * 2); ctx.fill();
+
+        ctx.restore();
+      }
+
+      function executeHoldCombo(input, styleOverrideId) {
+        const res = combat.triggerHoldAttack(player, input, level, styleOverrideId);
+        player.animState = 'attack';
+        player.animTimer = 0.26;
+        positionSlash();
+        if (res.bonusSoul > 0) {
+          soul = Math.min(100, soul + res.bonusSoul);
+        }
+        const pcx = player.x + player.w * 0.5, pcy = player.y + player.h * 0.5;
+        spawnFloat(pcx, player.y - 24, `${res.spec.holdName.toUpperCase()}!`, res.spec.color);
+        spawnBurst(pcx + player.facing * 18, pcy, 22, res.spec.color, 260);
+        if (res.aoeRadius > 0) {
+          enemies.forEach((e) => {
+            if (e.alive && circleRect(pcx, pcy, res.aoeRadius, e)) {
+              hitEnemy(e, Math.round(res.dmg * 0.72), e.x - pcx, e.y - pcy, true, false);
+            }
+          });
+        }
+        renderStyleBar();
+      }
+
+      function step(dt) {
+        if (pressed['KeyT']) {
+          const next = combat.cycleStyle(level);
+          spawnBurst(player.x + player.w * 0.5, player.y + player.h * 0.5, 14, next.color, 180);
+          spawnFloat(player.x + player.w * 0.5, player.y - 20, `${next.label.toUpperCase()} STYLE`, next.color);
+          renderStyleBar();
+        }
+        for (let i = 0; i < 7; i++) {
+          if (pressed[`Digit${i + 1}`]) {
+            const res = combat.selectStyle(i, level);
+            if (res.ok) {
+              spawnBurst(player.x + player.w * 0.5, player.y + player.h * 0.5, 14, res.spec.color, 180);
+              spawnFloat(player.x + player.w * 0.5, player.y - 20, `${res.spec.label.toUpperCase()} STYLE`, res.spec.color);
+              renderStyleBar();
+            }
+          }
+        }
+
+        combat.update(dt, level);
+
+        const moveX = (keys['KeyD'] || keys['ArrowRight'] ? 1 : 0) - (keys['KeyA'] || keys['ArrowLeft'] ? 1 : 0);
+        const up = Boolean(keys['KeyW'] || keys['ArrowUp']);
+        const down = Boolean(keys['KeyS'] || keys['ArrowDown']);
+        const attackPressed = Boolean(pressed['KeyJ'] || pressed['KeyX'] || pressed['MouseLeft']);
+        const attackHeld = Boolean(keys['KeyJ'] || keys['KeyX'] || keys['MouseLeft']);
+
+        let comboKeyStyle = null;
+        for (let i = 0; i < COMBO_LETTER_CODES.length; i++) {
+          if (pressed[COMBO_LETTER_CODES[i]]) {
+            comboKeyStyle = COMBAT_STYLES[i].id;
+            break;
+          }
+        }
+
+        if (player.invuln > 0) player.invuln = Math.max(0, player.invuln - dt);
+        if (player.dashCd > 0) player.dashCd = Math.max(0, player.dashCd - dt);
+        if (player.recoilTimer > 0) player.recoilTimer = Math.max(0, player.recoilTimer - dt);
+        if (player.animTimer > 0) player.animTimer = Math.max(0, player.animTimer - dt);
+
+        if ((pressed['KeyK'] || pressed['ShiftLeft'] || pressed['ShiftRight']) && player.dashTimer <= 0 && player.dashCd <= 0) {
+          player.dashTimer = 0.16;
+          player.dashCd = 0.38;
+          player.vx = player.facing * 860;
+          player.vy = 0;
+          sfx.playSlash(1.3);
+          spawnBurst(player.x + player.w * 0.5, player.y + player.h * 0.5, 12, '#99f6e4', 220);
+        }
+
+        if (player.dashTimer > 0) {
+          player.dashTimer -= dt;
+          player.vx = player.facing * 860;
+          player.vy = 0;
+        } else {
+          if (player.recoilTimer <= 0) {
+            if (moveX !== 0) {
+              player.facing = moveX;
+              player.vx = moveX * 360;
+            } else {
+              player.vx *= Math.pow(0.001, dt);
+              if (Math.abs(player.vx) < 8) player.vx = 0;
+            }
+          }
+          player.vy = Math.min(820, player.vy + 1950 * dt);
+
+          if (pressed['Space'] || pressed['KeyZ']) {
+            if (player.grounded) {
+              player.vy = -660;
+              player.grounded = false;
+              sfx.playPogo();
+            } else if (player.airJumps > 0) {
+              player.airJumps -= 1;
+              player.vy = -600;
+              sfx.playPogo();
+              spawnBurst(player.x + player.w * 0.5, player.y + player.h, 12, '#a7f3d0', 170);
+            }
+          }
+        }
+
+        if (comboKeyStyle) {
+          executeHoldCombo({ up, down }, comboKeyStyle);
+        } else if (pressed['KeyV']) {
+          const res = combat.triggerSpecial(player, level);
+          if (!res && level < 6) {
+            spawnFloat(player.x + player.w * 0.5, player.y - 18, 'Special unlocks Lv 6', '#94a3b8');
+          } else if (res) {
+            player.animState = 'attack';
+            player.animTimer = 0.25;
+            if (res.isAoe) {
+              const pcx = player.x + player.w * 0.5, pcy = player.y + player.h * 0.5;
+              enemies.forEach((e) => {
+                if (e.alive && circleRect(pcx, pcy, res.radius, e)) {
+                  hitEnemy(e, res.damage, e.x - pcx, e.y - pcy, true, false);
+                }
+              });
+            }
+          }
+        } else if (attackPressed) {
+          const pRes = combat.triggerPrimary(player, { up, down }, level);
+          if (pRes) {
+            if (pRes.hopForGroundPogo) {
+              player.vy = -265;
+              player.grounded = false;
+            } else if (pRes.isDown && player.vy > 220) {
+              player.vy = 140;
+            }
+            player.animState = 'attack';
+            player.animTimer = combat.slash.duration + 0.04;
+            positionSlash();
+          }
+        }
+
+        const ch = combat.stepCharge(dt, attackHeld);
+        if (ch.justReady) {
+          sfx.playChime();
+          spawnBurst(player.x + player.w * 0.5, player.y + player.h * 0.5, 16, combat.getSpec().color, 180);
+          spawnFloat(player.x + player.w * 0.5, player.y - 22, `${combat.getSpec().label.toUpperCase()} CHARGED!`, combat.getSpec().color);
+        }
+        if (attackReleasedFlag && combat.isChargeReady()) {
+          executeHoldCombo({ up, down });
+        }
+        attackReleasedFlag = false;
+
+        // Move & Collide
+        player.x += player.vx * dt;
+        player.x = Math.max(12, Math.min(WORLD.w - player.w - 12, player.x));
+        player.y += player.vy * dt;
+        player.grounded = false;
+        for (const p of platforms) {
+          if (rectsOverlap(player, p)) {
+            if (player.vy >= 0 && player.y + player.h - player.vy * dt <= p.y + 18) {
+              player.y = p.y - player.h;
+              player.vy = 0;
+              player.grounded = true;
+              player.airJumps = 1;
+            } else if (player.vy < 0 && player.y - player.vy * dt >= p.y + p.h - 14) {
+              player.y = p.y + p.h;
+              player.vy = 0;
+            }
+          }
+        }
+        if (player.grounded && Math.abs(player.vx) > 20) player.runCycle += dt * 13;
+
+        // Update Active Slash Arc
+        if (combat.slash.active) {
+          combat.slash.timer -= dt;
+          positionSlash();
+          const box = combat.getSlashHitbox();
+          let pogoed = false;
+          const dv = combat.slash.dir === 'right' ? [1, 0] : combat.slash.dir === 'left' ? [-1, 0] : combat.slash.dir === 'up' ? [0, -1] : [0, 1];
+          enemies.forEach((e) => {
+            if (e.alive && !combat.slash.hitIds.has(e.id) && rectsOverlap(box, e)) {
+              combat.slash.hitIds.add(e.id);
+              hitEnemy(e, combat.slash.damage, dv[0], dv[1], combat.slash.isHold, combat.slash.dir === 'left' || combat.slash.dir === 'right');
+              if (combat.slash.dir === 'down') pogoed = true;
+            }
+          });
+          if (combat.slash.dir === 'down' && !combat.slash.hitIds.has('spike')) {
+            for (const sp of spikes) {
+              if (rectsOverlap(box, sp)) {
+                combat.slash.hitIds.add('spike');
+                pogoed = true;
+                break;
+              }
+            }
+          }
+          if (pogoed) executePogoBounce();
+          if (combat.slash.timer <= 0) combat.slash.active = false;
+        }
+
+        // Update Needles
+        combat.needles.forEach((n) => {
+          n.life -= dt; n.x += n.vx * dt; n.y += n.vy * dt;
+          enemies.forEach((e) => {
+            if (e.alive && !n.hitIds.has(e.id) && rectsOverlap({ x: n.x - 10, y: n.y - 4, w: 20, h: 8 }, e)) {
+              n.hitIds.add(e.id);
+              n.life = 0;
+              hitEnemy(e, n.damage, n.facing, 0, false, false);
+            }
+          });
+        });
+        combat.needles = combat.needles.filter((n) => n.life > 0);
+
+        // Update Traps (Architect Cog & Mine)
+        combat.traps.forEach((t) => {
+          t.life -= dt; t.spin += dt * 15;
+          if (t.tick > 0) t.tick -= dt;
+          t.vy = Math.min(520, t.vy + 980 * dt);
+          t.x += t.vx * dt; t.y += t.vy * dt; t.vx *= Math.pow(0.25, dt);
+          for (const p of platforms) {
+            if (rectsOverlap({ x: t.x - t.radius, y: t.y - t.radius, w: t.radius * 2, h: t.radius * 2 }, p) && t.vy > 0) {
+              t.y = p.y - t.radius; t.vy = 0;
+            }
+          }
+          if (t.tick <= 0) {
+            for (const e of enemies) {
+              if (e.alive && circleRect(t.x, t.y, t.radius + 8, e)) {
+                t.tick = 0.3;
+                hitEnemy(e, t.damage, t.x < e.x ? 1 : -1, -0.3, false, false);
+                if (t.kind === 'mine') {
+                  combat.aoeRings.push({ x: t.x, y: t.y, radius: 18, maxRadius: 72, life: 0.3, maxLife: 0.3, color: t.color, ult: false });
+                  t.life = 0;
+                }
+                break;
+              }
+            }
+          }
+        });
+        combat.traps = combat.traps.filter((t) => t.life > 0);
+
+        // Update Energy Waves
+        combat.waves.forEach((w) => {
+          w.life -= dt; w.x += w.vx * dt;
+          const box = { x: w.x - w.halfW, y: w.y - w.halfH, w: w.halfW * 2, h: w.halfH * 2 };
+          enemies.forEach((e) => {
+            if (e.alive && !w.hitIds.has(e.id) && rectsOverlap(box, e)) {
+              w.hitIds.add(e.id);
+              hitEnemy(e, w.damage, w.facing, 0, true, false);
+            }
+          });
+        });
+        combat.waves = combat.waves.filter((w) => w.life > 0);
+
+        // Update Enemies
+        enemies.forEach((e) => {
+          if (!e.alive) {
+            e.respawn -= dt;
+            if (e.respawn <= 0) { e.alive = true; e.hp = e.maxHp; }
+            return;
+          }
+          if (e.flash > 0) e.flash = Math.max(0, e.flash - dt);
+          if (e.knockTimer > 0) {
+            e.knockTimer -= dt;
+            e.x += e.knockVx * dt;
+            e.knockVx *= Math.pow(0.08, dt);
+          } else if (e.kind === 'flyer') {
+            e.x = e.homeX + Math.sin(time * 1.8) * 110;
+            e.y = e.homeY + Math.cos(time * 2.4) * 32;
+          } else {
+            e.x += e.vx * dt;
+            if (e.x < e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); e.facing = 1; }
+            if (e.x + e.w > e.maxX) { e.x = e.maxX - e.w; e.vx = -Math.abs(e.vx); e.facing = -1; }
+          }
+        });
+
+        particles.forEach((p) => { p.life -= dt; p.vy += 220 * dt; p.x += p.vx * dt; p.y += p.vy * dt; });
+        particles = particles.filter((p) => p.life > 0);
+        floats.forEach((f) => { f.life -= dt; f.y -= 48 * dt; });
+        floats = floats.filter((f) => f.life > 0);
+
+        Object.keys(pressed).forEach((k) => { pressed[k] = false; });
+      }
+
+      function render() {
+        const w = canvas.width = window.innerWidth;
+        const h = canvas.height = window.innerHeight;
+        const scale = Math.min(w / WORLD.w, h / WORLD.h);
+        const offX = (w - WORLD.w * scale) * 0.5;
+        const offY = (h - WORLD.h * scale) * 0.5;
+
+        let sx = 0, sy = 0;
+        if (shakeTime > 0) {
+          sx = (Math.random() * 2 - 1) * shakeMag;
+          sy = (Math.random() * 2 - 1) * shakeMag;
+        }
+
+        ctx.fillStyle = '#060c11';
+        ctx.fillRect(0, 0, w, h);
+
+        ctx.save();
+        ctx.translate(offX + sx, offY + sy);
+        ctx.scale(scale, scale);
+
+        // Background Atmosphere
+        const bgGrad = ctx.createLinearGradient(0, 0, 0, WORLD.h);
+        bgGrad.addColorStop(0, '#09151a');
+        bgGrad.addColorStop(1, '#04090c');
+        ctx.fillStyle = bgGrad;
+        ctx.fillRect(0, 0, WORLD.w, WORLD.h);
+
+        // Platforms
+        platforms.forEach((p) => {
+          ctx.fillStyle = '#112226';
+          ctx.fillRect(p.x, p.y, p.w, p.h);
+          ctx.fillStyle = '#2d6a5a';
+          ctx.fillRect(p.x, p.y, p.w, 6);
+        });
+
+        // Pogoable Spikes
+        spikes.forEach((sp) => {
+          ctx.fillStyle = '#e2e8f0';
+          const teeth = Math.floor(sp.w / 14);
+          for (let i = 0; i < teeth; i++) {
+            const tx = sp.x + i * 14;
+            ctx.beginPath();
+            ctx.moveTo(tx, sp.y + sp.h);
+            ctx.lineTo(tx + 7, sp.y);
+            ctx.lineTo(tx + 14, sp.y + sp.h);
+            ctx.closePath();
+            ctx.fill();
+          }
+        });
+
+        // AoE Rings
+        combat.aoeRings.forEach((r) => {
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, r.life / r.maxLife);
+          ctx.strokeStyle = r.color;
+          ctx.lineWidth = r.ult ? 4.5 : 3;
+          ctx.beginPath(); ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2); ctx.stroke();
+          ctx.restore();
+        });
+
+        // Traps
+        combat.traps.forEach((t) => {
+          ctx.save();
+          ctx.translate(t.x, t.y);
+          ctx.rotate(t.spin);
+          ctx.strokeStyle = t.color;
+          ctx.fillStyle = '#1f2937';
+          ctx.lineWidth = 2;
+          if (t.kind === 'cog') {
+            ctx.beginPath();
+            for (let i = 0; i < 8; i++) {
+              const a = (i / 8) * Math.PI * 2;
+              const r = i % 2 === 0 ? t.radius : t.radius * 0.65;
+              if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+              else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+            }
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+          } else {
+            ctx.beginPath(); ctx.arc(0, 0, t.radius, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          }
+          ctx.restore();
+        });
+
+        // Enemies
+        enemies.forEach((e) => {
+          if (!e.alive) return;
+          ctx.save();
+          if (e.flash > 0) {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(e.x, e.y, e.w, e.h);
+          } else {
+            ctx.fillStyle = e.kind === 'flyer' ? '#475569' : e.kind === 'shieldbearer' ? '#78350f' : '#1e3a3a';
+            ctx.strokeStyle = '#a7f3d0';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(e.x, e.y, e.w, e.h, 8);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#fde047';
+            const eyeX = e.facing === 1 ? e.x + e.w - 12 : e.x + 8;
+            ctx.beginPath(); ctx.arc(eyeX, e.y + 14, 3.2, 0, Math.PI * 2); ctx.fill();
+          }
+          // HP bar
+          ctx.fillStyle = '#071315';
+          ctx.fillRect(e.x, e.y - 9, e.w, 4);
+          ctx.fillStyle = '#fb7185';
+          ctx.fillRect(e.x, e.y - 9, e.w * (e.hp / e.maxHp), 4);
+          ctx.restore();
+        });
+
+        // Player (Horned Warrior Character)
+        const state = player.animTimer > 0 ? 'attack' : player.grounded && Math.abs(player.vx) > 25 ? 'run' : 'idle';
+        const animP = player.animTimer > 0 ? 1 - player.animTimer / 0.25 : 0;
+        drawWarriorCharacter(player.x, player.y, time, player.facing, state, combat.getChargeProgress(), combat.getSpec().color, animP);
+
+        // Vector Crescent / 7 Distinct Style Combo Slash Visuals
+        if (combat.slash.active) {
+          const s = combat.slash;
+          const p = 1 - s.timer / s.duration;
+          ctx.save();
+          ctx.translate(s.x, s.y);
+          ctx.globalAlpha = Math.max(0.25, 1 - p * 0.7);
+          ctx.strokeStyle = s.color;
+          ctx.shadowColor = s.color;
+          ctx.shadowBlur = s.isHold ? 18 : 10;
+          ctx.lineWidth = s.isHold ? 7 : 5;
+          if (s.isHold && (s.styleId === 'wanderer' || s.styleId === 'witch')) {
+            ctx.beginPath();
+            ctx.arc(0, 0, s.radius * 0.88, p * 5, p * 5 + Math.PI * 1.7);
+            ctx.stroke();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2.6;
+            ctx.beginPath();
+            ctx.arc(0, 0, s.radius * 0.62, -p * 5, -p * 5 + Math.PI * 1.45);
+            ctx.stroke();
+            if (s.styleId === 'witch') {
+              ctx.strokeStyle = 'rgba(167, 243, 208, 0.75)';
+              ctx.lineWidth = 1.6;
+              for (let i = 0; i < 6; i++) {
+                const ang = (i / 6) * Math.PI * 2 + p * 1.4;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                ctx.lineTo(Math.cos(ang) * s.radius, Math.sin(ang) * s.radius);
+                ctx.stroke();
+              }
+            }
+          } else {
+            const base = s.dir === 'right' ? 0 : s.dir === 'left' ? Math.PI : s.dir === 'up' ? -Math.PI * 0.5 : Math.PI * 0.5;
+            ctx.rotate(base);
+            ctx.beginPath();
+            ctx.arc(0, 0, s.radius, -1.05, 1.05);
+            ctx.stroke();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2.4;
+            ctx.beginPath();
+            ctx.arc(0, 0, s.radius * 0.9, -0.85, 0.85);
+            ctx.stroke();
+
+            if (s.isHold) {
+              if (s.styleId === 'beast') {
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 3.2;
+                for (let c = -1; c <= 1; c++) {
+                  ctx.beginPath();
+                  ctx.moveTo(-6, c * 16 - 10);
+                  ctx.lineTo(s.radius * 0.95, c * 16 + 12);
+                  ctx.stroke();
+                }
+              } else if (s.styleId === 'architect') {
+                ctx.strokeStyle = '#fef3c7';
+                ctx.lineWidth = 2.6;
+                ctx.beginPath();
+                ctx.moveTo(0, -14); ctx.lineTo(s.radius * 0.92, 0); ctx.lineTo(0, 14);
+                ctx.stroke();
+              } else if (s.styleId === 'reaper') {
+                ctx.strokeStyle = '#ede9fe';
+                ctx.lineWidth = 3.6;
+                ctx.beginPath();
+                ctx.arc(-6, 0, s.radius * 0.72, -1.08, 1.08);
+                ctx.stroke();
+              } else if (s.styleId === 'hunter') {
+                ctx.strokeStyle = '#ecfeff';
+                ctx.lineWidth = 2.8;
+                [-12, 0, 12].forEach((yOff) => {
+                  ctx.beginPath(); ctx.moveTo(4, yOff); ctx.lineTo(s.radius * 1.15, yOff); ctx.stroke();
+                });
+              } else if (s.styleId === 'shaman') {
+                ctx.strokeStyle = '#fde047';
+                ctx.lineWidth = 3.2;
+                ctx.beginPath();
+                ctx.arc(4, 0, s.radius * 0.75, -0.9, 0.9);
+                ctx.stroke();
+              }
+            }
+          }
+          ctx.restore();
+        }
+
+        // Needles & Waves
+        combat.needles.forEach((n) => {
+          ctx.save();
+          ctx.translate(n.x, n.y);
+          if (n.facing === -1) ctx.scale(-1, 1);
+          ctx.fillStyle = '#ffffff';
+          ctx.strokeStyle = n.color;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(18, 0); ctx.lineTo(-10, -4); ctx.lineTo(-6, 0); ctx.lineTo(-10, 4); ctx.closePath();
+          ctx.fill(); ctx.stroke();
+          ctx.restore();
+        });
+
+        combat.waves.forEach((wv) => {
+          ctx.save();
+          ctx.translate(wv.x, wv.y);
+          ctx.strokeStyle = wv.color;
+          ctx.lineWidth = wv.ult ? 8 : 5;
+          ctx.beginPath();
+          ctx.arc(0, 0, wv.halfH * 0.75, wv.facing === 1 ? -1.1 : Math.PI - 1.1, wv.facing === 1 ? 1.1 : Math.PI + 1.1);
+          ctx.stroke();
+          ctx.restore();
+        });
+
+        // Particles & Floating Numbers
+        particles.forEach((pt) => {
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, pt.life / pt.maxLife);
+          ctx.fillStyle = pt.color;
+          ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.size, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+        });
+        floats.forEach((f) => {
+          ctx.save();
+          ctx.globalAlpha = Math.max(0, f.life / f.maxLife);
+          ctx.font = 'bold 14px system-ui, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = f.color;
+          ctx.fillText(f.text, f.x, f.y);
+          ctx.restore();
+        });
+
+        ctx.restore();
+      }
+
+      function renderStyleBar() {
+        const bar = document.getElementById('styleBar');
+        bar.innerHTML = '';
+        COMBAT_STYLES.forEach((s) => {
+          const active = combat.activeStyle.id === s.id;
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = `style-btn${active ? ' active' : ''}`;
+          btn.title = `Press ${s.hotkey} for ${s.holdName}`;
+          btn.innerHTML = `<span class="style-num" style="color:${s.color};border:1px solid ${s.color}55;padding:0 4px;border-radius:4px;">${s.hotkey}</span><span>${s.label}</span>`;
+          btn.addEventListener('click', () => {
+            combat.selectStyle(s.index, level);
+            renderStyleBar();
+            syncHud();
+            canvas.focus();
+          });
+          bar.appendChild(btn);
+        });
+      }
+
+      function syncHud() {
+        const spec = combat.getSpec();
+        document.getElementById('soulFill').style.height = `${soul}%`;
+        document.getElementById('soulVal').textContent = String(Math.round(soul));
+        const masksRow = document.getElementById('masksRow');
+        masksRow.innerHTML = Array.from({ length: player.maxHp })
+          .map((_, i) => `<div class="mask${i < player.hp ? '' : ' empty'}"></div>`)
+          .join('');
+        document.getElementById('levelLabel').textContent = `Level ${level}: ${LEVEL_TITLES[level - 1]}`;
+        const nextReq = level < 10 ? XP_THRESHOLDS[level] : XP_THRESHOLDS[9];
+        document.getElementById('xpLabel').textContent = level >= 10 ? 'MAX' : `${xp}/${nextReq} XP`;
+        document.getElementById('attackLabel').textContent = combat.activeAttackName;
+        document.getElementById('styleTitle').textContent = spec.label;
+        document.getElementById('styleTitle').style.color = spec.color;
+        document.getElementById('holdName').textContent = spec.holdName;
+        document.getElementById('pogoName').textContent = spec.pogoName;
+
+        const cp = combat.getChargeProgress();
+        const wrap = document.getElementById('chargeWrap');
+        if (cp > 0.05) {
+          wrap.style.display = 'inline-flex';
+          const fill = document.getElementById('chargeFill');
+          fill.style.width = `${Math.round(cp * 100)}%`;
+          fill.style.background = cp >= 1 ? '#ffffff' : spec.color;
+          document.getElementById('chargePct').textContent = cp >= 1 ? 'READY' : `${Math.round(cp * 100)}%`;
+        } else {
+          wrap.style.display = 'none';
+        }
+      }
+
+      document.getElementById('lvlDownBtn').addEventListener('click', () => { setLevel(level - 1); canvas.focus(); });
+      document.getElementById('lvlUpBtn').addEventListener('click', () => { setLevel(level + 1); canvas.focus(); });
+      document.getElementById('unlockAllBtn').addEventListener('click', () => { setLevel(10); canvas.focus(); });
+      document.getElementById('resetBtn').addEventListener('click', () => {
+        enemies = createEnemies();
+        player.x = 200; player.y = 564; player.vx = 0; player.vy = 0; player.hp = 5;
+        soul = 40;
+        setLevel(1);
+        combat.selectStyle(0, 1);
+        renderStyleBar();
+        canvas.focus();
+      });
+
+      renderStyleBar();
+      syncHud();
+      canvas.focus();
+
+      let last = performance.now();
+      function loop(now) {
+        const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+        last = now;
+        time += dt;
+        if (shakeTime > 0) shakeTime = Math.max(0, shakeTime - dt);
+        if (hitstop > 0) {
+          hitstop = Math.max(0, hitstop - dt);
+        } else {
+          step(dt);
+        }
+        render();
+        syncHud();
+        requestAnimationFrame(loop);
+      }
+      requestAnimationFrame(loop);
+    })();
+  </script>
+</body>
+</html>

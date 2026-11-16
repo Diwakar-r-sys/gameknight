@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Smooth Camera Follow · Interconnected Metroidvania</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      background: #050a0f; color: #e8f5ef;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      user-select: none;
+    }
+    canvas { display: block; width: 100vw; height: 100dvh; outline: none; cursor: crosshair; }
+
+    .hud {
+      position: fixed; inset: 0; pointer-events: none;
+      display: flex; flex-direction: column; justify-content: space-between;
+      padding: 16px 20px; z-index: 10;
+    }
+    .hud-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .hud-left { display: flex; align-items: center; gap: 12px; }
+    .soul-orb {
+      width: 48px; height: 48px; border-radius: 50%;
+      border: 2px solid #499b84; background: #071315;
+      position: relative; overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .soul-fill {
+      position: absolute; left: 0; right: 0; bottom: 0;
+      background: linear-gradient(180deg, #6ee7b7, #2d6a4f);
+      transition: height 120ms ease-out;
+    }
+    .soul-val {
+      position: relative; z-index: 1; font: 700 12px ui-monospace, monospace; color: #ecfdf5;
+    }
+    .masks { display: flex; gap: 5px; margin-bottom: 4px; }
+    .room-meta { font-size: 12.5px; color: #9ec4b7; display: flex; align-items: center; gap: 8px; }
+    .room-meta strong { color: #eef7f3; }
+
+    .minimap {
+      background: rgba(6, 17, 19, 0.9); border: 1px solid #24443f;
+      border-radius: 8px; padding: 8px; pointer-events: auto;
+    }
+    .minimap-foot {
+      margin-top: 4px; display: flex; justify-content: space-between;
+      font: 500 10px ui-monospace, monospace; color: #83a69b;
+    }
+
+    .controls-hint {
+      text-align: center; font-size: 11.5px; color: #86aa9e;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game" tabindex="0"></canvas>
+
+  <div class="hud">
+    <div class="hud-top">
+      <div class="hud-left">
+        <div class="soul-orb">
+          <div id="soulFill" class="soul-fill" style="height: 50%"></div>
+          <span id="soulVal" class="soul-val">50</span>
+        </div>
+        <div>
+          <div id="masks" class="masks"></div>
+          <div class="room-meta">
+            <strong id="roomTitle">Glacial Entry Hall</strong>
+            <span>·</span>
+            <span id="biomeLabel">Interconnected Cavern</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="minimap">
+        <svg id="miniSvg" width="150" height="86" viewBox="0 0 150 86"></svg>
+        <div class="minimap-foot">
+          <span id="coordTxt">[0, 0]</span>
+          <span>4 Chambers</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls-hint">
+      A / D Move · Space / W Jump &amp; Double Jump · J / Click Slash (W+J Up · S+J Pogo) · K / Shift Dash
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const canvas = document.getElementById('game');
+      const ctx = canvas.getContext('2d');
+      canvas.focus();
+
+      /**
+       * Dynamic 2D Metroidvania Camera Class
+       * 1. Smooth Lerp Following: camera.x += (targetX - camera.x) * smoothingFactor
+       * 2. Centered Framing + Deadzone + Directional Look-Ahead Offset
+       * 3. Room Boundaries & Map Clamping
+       */
+      class Camera {
+        constructor(options = {}) {
+          this.x = 0;
+          this.y = 0;
+          this.targetX = 0;
+          this.targetY = 0;
+
+          // Smooth lerp factor (0.08 - 0.10 at 60fps)
+          this.smoothingFactor = options.smoothingFactor ?? 0.09;
+          this.transitionSmoothing = options.transitionSmoothing ?? 0.11;
+
+          // Deadzone & Look-Ahead framing
+          this.deadzoneW = options.deadzoneW ?? 52;
+          this.deadzoneH = options.deadzoneH ?? 38;
+          this.lookAheadDistance = options.lookAheadDistance ?? 92;
+
+          this.focusX = 0;
+          this.focusY = 0;
+          this.lookAheadX = 0;
+          this.lookAheadY = 0;
+          this.initialized = false;
+        }
+
+        snapTo(player, viewW, viewH, world, room) {
+          const pcx = player.x + player.w * 0.5;
+          const pcy = player.y + player.h * 0.5;
+          this.focusX = pcx;
+          this.focusY = pcy;
+          this.lookAheadX = player.facing * (this.lookAheadDistance * 0.5);
+          this.lookAheadY = 0;
+
+          const clamped = this.clampToBounds(
+            this.focusX + this.lookAheadX - viewW * 0.5,
+            this.focusY + this.lookAheadY - viewH * 0.5,
+            viewW,
+            viewH,
+            world,
+            room
+          );
+          this.x = clamped.x;
+          this.y = clamped.y;
+          this.targetX = clamped.x;
+          this.targetY = clamped.y;
+          this.initialized = true;
+        }
+
+        clampToBounds(rawX, rawY, viewW, viewH, world, room) {
+          const worldMaxX = Math.max(0, world.width - viewW);
+          const worldMaxY = Math.max(0, world.height - viewH);
+
+          if (!room) {
+            return {
+              x: Math.max(0, Math.min(worldMaxX, rawX)),
+              y: Math.max(0, Math.min(worldMaxY, rawY)),
+            };
+          }
+
+          // Determine open edges from adjacent connected rooms so doorways allow seamless scrolling,
+          // while closed room walls clamp strictly so the viewport never exposes outside level bounds.
+          let hasW = false, hasE = false, hasN = false, hasS = false;
+          for (const adjId of room.adj) {
+            const a = world.rooms.find((r) => r.id === adjId);
+            if (!a) continue;
+            if (a.x + a.w <= room.x + 24) hasW = true;
+            if (a.x >= room.x + room.w - 24) hasE = true;
+            if (a.y + a.h <= room.y + 24) hasN = true;
+            if (a.y >= room.y + room.h - 24) hasS = true;
+          }
+
+          let minX = hasW ? 0 : Math.max(0, room.x);
+          let maxX = hasE ? worldMaxX : Math.max(0, Math.min(worldMaxX, room.x + room.w - viewW));
+          const clampedX = minX > maxX
+            ? Math.max(0, Math.min(worldMaxX, room.x + (room.w - viewW) * 0.5))
+            : Math.max(minX, Math.min(maxX, rawX));
+
+          let minY = hasN ? 0 : Math.max(0, room.y);
+          let maxY = hasS ? worldMaxY : Math.max(0, Math.min(worldMaxY, room.y + room.h - viewH));
+          const clampedY = minY > maxY
+            ? Math.max(0, Math.min(worldMaxY, room.y + (room.h - viewH) * 0.5))
+            : Math.max(minY, Math.min(maxY, rawY));
+
+          return {
+            x: Math.max(0, Math.min(worldMaxX, clampedX)),
+            y: Math.max(0, Math.min(worldMaxY, clampedY)),
+          };
+        }
+
+        update(player, viewW, viewH, world, room, isTransitioning, dt) {
+          if (!this.initialized) {
+            this.snapTo(player, viewW, viewH, world, room);
+            return;
+          }
+
+          const stepDt = Math.max(0.001, Math.min(0.05, dt));
+          const pcx = player.x + player.w * 0.5;
+          const pcy = player.y + player.h * 0.5;
+
+          // 1. Deadzone tracking around the player center
+          const halfDzW = this.deadzoneW * 0.5;
+          const halfDzH = this.deadzoneH * 0.5;
+          const dx = pcx - this.focusX;
+          const dy = pcy - this.focusY;
+          if (Math.abs(dx) > halfDzW) this.focusX = pcx - Math.sign(dx) * halfDzW;
+          if (Math.abs(dy) > halfDzH) this.focusY = pcy - Math.sign(dy) * halfDzH;
+
+          // 2. Smooth directional Look-Ahead offset
+          const lookLerp = 1 - Math.pow(1 - 0.08, stepDt * 60);
+          const desiredLookX = player.facing * this.lookAheadDistance + Math.max(-30, Math.min(30, player.vx * 0.05));
+          const desiredLookY = Math.max(-55, Math.min(72, player.vy * 0.075));
+          this.lookAheadX += (desiredLookX - this.lookAheadX) * lookLerp;
+          this.lookAheadY += (desiredLookY - this.lookAheadY) * lookLerp;
+
+          // 3. Centered viewport framing + room/world boundary clamping
+          const rawTargetX = this.focusX + this.lookAheadX - viewW * 0.5;
+          const rawTargetY = this.focusY + this.lookAheadY - viewH * 0.5;
+          const clamped = this.clampToBounds(rawTargetX, rawTargetY, viewW, viewH, world, room);
+          this.targetX = clamped.x;
+          this.targetY = clamped.y;
+
+          // 4. Smooth Lerp Following: camera.x += (targetX - camera.x) * smoothingFactor
+          const baseSmooth = isTransitioning ? this.transitionSmoothing : this.smoothingFactor;
+          const alpha = 1 - Math.pow(1 - baseSmooth, stepDt * 60);
+          this.x += (this.targetX - this.x) * alpha;
+          this.y += (this.targetY - this.y) * alpha;
+
+          if (Math.abs(this.targetX - this.x) < 0.05) this.x = this.targetX;
+          if (Math.abs(this.targetY - this.y) < 0.05) this.y = this.targetY;
+        }
+      }
+
+      // === INTERCONNECTED 4-ROOM WORLD (3600 x 1920) ===
+      const world = {
+        width: 3600,
+        height: 1920,
+        rooms: [
+          { id: 'entry-hall', name: 'Glacial Entry Hall', gx: 0, gy: 0, x: 0, y: 0, w: 1800, h: 960, visited: true, discovered: true, adj: ['crystal-chasm', 'canopy-overlook'] },
+          { id: 'crystal-chasm', name: 'Deep Crystal Chasm', gx: 1, gy: 0, x: 1800, y: 0, w: 1800, h: 960, visited: false, discovered: true, adj: ['entry-hall', 'sub-sanctum'] },
+          { id: 'canopy-overlook', name: 'Lower Grotto Tiers', gx: 0, gy: 1, x: 0, y: 960, w: 1800, h: 960, visited: false, discovered: true, adj: ['entry-hall', 'sub-sanctum'] },
+          { id: 'sub-sanctum', name: 'Subterranean Sanctum', gx: 1, gy: 1, x: 1800, y: 960, w: 1800, h: 960, visited: false, discovered: false, adj: ['crystal-chasm', 'canopy-overlook'] },
+        ],
+        platforms: [
+          // Outer map boundaries
+          { x: 0, y: 0, w: 3600, h: 72 },
+          { x: 0, y: 0, w: 48, h: 1920 },
+          { x: 3552, y: 0, w: 48, h: 1920 },
+          { x: 0, y: 1820, w: 3600, h: 100 },
+
+          // Room 1: Glacial Entry Hall (0..1800, 0..960) with floor drop opening at x=1220..1460
+          { x: 48, y: 760, w: 1172, h: 200 },
+          { x: 1460, y: 760, w: 340, h: 200 },
+          { x: 380, y: 630, w: 220, h: 24 },
+          { x: 740, y: 520, w: 230, h: 24 },
+          { x: 1110, y: 420, w: 210, h: 24 },
+          { x: 1480, y: 570, w: 220, h: 24 },
+
+          // Room 2: Deep Crystal Chasm (1800..3600, 0..960) with vertical drop at x=2920..3180
+          { x: 1800, y: 760, w: 1120, h: 200 },
+          { x: 3180, y: 760, w: 372, h: 200 },
+          { x: 1960, y: 615, w: 210, h: 24 },
+          { x: 2320, y: 495, w: 230, h: 24 },
+          { x: 2690, y: 385, w: 220, h: 24 },
+          { x: 3200, y: 540, w: 200, h: 24 },
+
+          // Room 3: Lower Grotto Tiers (0..1800, 960..1920)
+          { x: 1120, y: 1090, w: 170, h: 24 },
+          { x: 1420, y: 1240, w: 210, h: 24 },
+          { x: 1030, y: 1390, w: 220, h: 24 },
+          { x: 640, y: 1520, w: 240, h: 26 },
+          { x: 260, y: 1640, w: 260, h: 26 },
+          { x: 1380, y: 1620, w: 240, h: 26 },
+
+          // Room 4: Subterranean Sanctum (1800..3600, 960..1920)
+          { x: 2940, y: 1120, w: 200, h: 24 },
+          { x: 2610, y: 1290, w: 220, h: 24 },
+          { x: 2240, y: 1460, w: 230, h: 24 },
+          { x: 1920, y: 1620, w: 210, h: 26 },
+          { x: 3120, y: 1540, w: 250, h: 26 },
+        ],
+        spikes: [
+          { x: 650, y: 736, w: 120, h: 24 },
+          { x: 2140, y: 736, w: 140, h: 24 },
+          { x: 1100, y: 1796, w: 220, h: 24 },
+          { x: 2550, y: 1796, w: 220, h: 24 },
+        ],
+        enemies: [
+          { id: 'e1', x: 440, y: 594, w: 34, h: 36, vx: 70, minX: 390, maxX: 590, hp: 55, flash: 0, alive: true },
+          { id: 'e2', x: 1520, y: 724, w: 34, h: 36, vx: 80, minX: 1470, maxX: 1760, hp: 55, flash: 0, alive: true },
+          { id: 'e3', x: 2400, y: 724, w: 34, h: 36, vx: -85, minX: 2300, maxX: 2880, hp: 65, flash: 0, alive: true },
+          { id: 'e4', x: 700, y: 1484, w: 34, h: 36, vx: 75, minX: 650, maxX: 870, hp: 60, flash: 0, alive: true },
+          { id: 'e5', x: 2290, y: 1424, w: 34, h: 36, vx: -75, minX: 2250, maxX: 2460, hp: 70, flash: 0, alive: true },
+        ],
+      };
+
+      const player = {
+        x: 240, y: 700, w: 28, h: 46,
+        vx: 0, vy: 0, facing: 1, grounded: false,
+        hp: 5, maxHp: 5, soul: 50,
+        airJumps: 1, dashTimer: 0, dashCd: 0,
+        recoilTimer: 0, runCycle: 0,
+      };
+
+      const slash = { active: false, x: 0, y: 0, dir: 'right', timer: 0, duration: 0.14, radius: 58, hitIds: new Set() };
+      const particles = [];
+      let currentRoom = world.rooms[0];
+      let roomTransitionTimer = 0;
+      let hitStopTimer = 0;
+      let shakeTime = 0, shakeMag = 0;
+      let time = 0;
+
+      const camera = new Camera({
+        smoothingFactor: 0.09,
+        transitionSmoothing: 0.11,
+        deadzoneW: 52,
+        deadzoneH: 38,
+        lookAheadDistance: 92,
+      });
+
+      const keys = {};
+      const pressed = {};
+      window.addEventListener('keydown', (e) => {
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+        if (!keys[e.code]) pressed[e.code] = true;
+        keys[e.code] = true;
+      });
+      window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+      canvas.addEventListener('mousedown', (e) => {
+        canvas.focus();
+        if (e.button === 0) pressed['KeyJ'] = true;
+      });
+
+      function rectsOverlap(a, b) {
+        return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+      }
+
+      function syncRoom(dt) {
+        if (roomTransitionTimer > 0) roomTransitionTimer = Math.max(0, roomTransitionTimer - dt);
+        const pcx = player.x + player.w * 0.5;
+        const pcy = player.y + player.h * 0.5;
+        const found = world.rooms.find((r) => pcx >= r.x && pcx < r.x + r.w && pcy >= r.y && pcy < r.y + r.h) || world.rooms[0];
+        if (found.id !== currentRoom.id) {
+          currentRoom = found;
+          roomTransitionTimer = 0.45;
+          found.visited = true;
+          found.discovered = true;
+          for (const adjId of found.adj) {
+            const adj = world.rooms.find((r) => r.id === adjId);
+            if (adj) adj.discovered = true;
+          }
+        }
+      }
+
+      function step(dt) {
+        if (shakeTime > 0) shakeTime = Math.max(0, shakeTime - dt);
+        if (hitStopTimer > 0) {
+          hitStopTimer = Math.max(0, hitStopTimer - dt);
+          return;
+        }
+
+        const moveX = (keys['KeyD'] || keys['ArrowRight'] ? 1 : 0) - (keys['KeyA'] || keys['ArrowLeft'] ? 1 : 0);
+        if (moveX !== 0 && player.recoilTimer <= 0 && player.dashTimer <= 0) player.facing = moveX;
+
+        if (player.dashCd > 0) player.dashCd = Math.max(0, player.dashCd - dt);
+        if (player.recoilTimer > 0) player.recoilTimer = Math.max(0, player.recoilTimer - dt);
+
+        if ((pressed['KeyK'] || pressed['ShiftLeft'] || pressed['ShiftRight']) && player.dashCd <= 0 && player.dashTimer <= 0) {
+          player.dashTimer = 0.16;
+          player.dashCd = 0.38;
+          player.vx = player.facing * 860;
+          player.vy = 0;
+        }
+
+        if (player.dashTimer > 0) {
+          player.dashTimer -= dt;
+          player.vx = player.facing * 860;
+          player.vy = 0;
+        } else {
+          if (player.recoilTimer <= 0) {
+            player.vx = moveX !== 0 ? moveX * 370 : player.vx * Math.pow(0.001, dt);
+            if (Math.abs(player.vx) < 8) player.vx = 0;
+          }
+          player.vy = Math.min(820, player.vy + 1900 * dt);
+
+          if (pressed['Space'] || pressed['KeyZ'] || (pressed['KeyW'] && !keys['KeyJ'])) {
+            if (player.grounded) {
+              player.vy = -670;
+              player.grounded = false;
+            } else if (player.airJumps > 0) {
+              player.airJumps -= 1;
+              player.vy = -610;
+            }
+          }
+        }
+
+        if (pressed['KeyJ'] || pressed['KeyX']) {
+          const up = keys['KeyW'] || keys['ArrowUp'];
+          const down = keys['KeyS'] || keys['ArrowDown'];
+          slash.dir = up ? 'up' : down ? 'down' : (player.facing === 1 ? 'right' : 'left');
+          if (down && player.grounded) {
+            player.vy = -265;
+            player.grounded = false;
+          }
+          slash.active = true;
+          slash.timer = slash.duration;
+          slash.hitIds.clear();
+        }
+
+        // Move X & Collide
+        player.x += player.vx * dt;
+        for (const p of world.platforms) {
+          if (rectsOverlap(player, p)) {
+            if (player.vx > 0) player.x = p.x - player.w;
+            else if (player.vx < 0) player.x = p.x + p.w;
+            player.vx = 0;
+          }
+        }
+
+        // Move Y & Collide
+        player.y += player.vy * dt;
+        player.grounded = false;
+        for (const p of world.platforms) {
+          if (rectsOverlap(player, p)) {
+            if (player.vy > 0) {
+              player.y = p.y - player.h;
+              player.vy = 0;
+              player.grounded = true;
+              player.airJumps = 1;
+            } else if (player.vy < 0) {
+              player.y = p.y + p.h;
+              player.vy = 0;
+            }
+          }
+        }
+        if (player.grounded && Math.abs(player.vx) > 20) player.runCycle += dt * 13;
+
+        // Slash Hit Detection + 5-Step Hit Juice
+        if (slash.active) {
+          slash.timer -= dt;
+          const cx = player.x + player.w * 0.5;
+          const cy = player.y + player.h * 0.5;
+          const dv = slash.dir === 'right' ? [1, 0] : slash.dir === 'left' ? [-1, 0] : slash.dir === 'up' ? [0, -1] : [0, 1];
+          slash.x = cx + dv[0] * 14;
+          slash.y = cy + dv[1] * 14;
+          const box = slash.dir === 'up'
+            ? { x: cx - 34, y: cy - slash.radius - 10, w: 68, h: slash.radius + 14 }
+            : slash.dir === 'down'
+              ? { x: cx - 34, y: cy - 4, w: 68, h: slash.radius + 18 }
+              : { x: slash.dir === 'right' ? cx - 6 : cx - slash.radius - 8, y: cy - 30, w: slash.radius + 14, h: 60 };
+
+          for (const e of world.enemies) {
+            if (!e.alive || slash.hitIds.has(e.id) || !rectsOverlap(box, e)) continue;
+            slash.hitIds.add(e.id);
+            e.flash = 4 / 60;
+            e.hp -= 20;
+            hitStopTimer = 3 / 60;
+            shakeTime = 0.14;
+            shakeMag = 5;
+            if (slash.dir === 'down') { player.vy = -590; player.airJumps = 1; }
+            else if (player.dashTimer <= 0) { player.vx = -dv[0] * 170; player.recoilTimer = 0.08; }
+            for (let i = 0; i < 12; i++) {
+              const ang = Math.atan2(dv[1], dv[0]) + (Math.random() - 0.5) * 1.2;
+              const spd = 170 + Math.random() * 180;
+              particles.push({ x: e.x + e.w * 0.5, y: e.y + e.h * 0.5, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, life: 0.28, maxLife: 0.28, color: i % 3 === 0 ? '#ffffff' : '#67e8f9' });
+            }
+            if (e.hp <= 0) e.alive = false;
+          }
+          if (slash.dir === 'down' && !slash.hitIds.has('spike')) {
+            for (const sp of world.spikes) {
+              if (rectsOverlap(box, sp)) {
+                slash.hitIds.add('spike');
+                player.vy = -590;
+                player.airJumps = 1;
+                break;
+              }
+            }
+          }
+          if (slash.timer <= 0) slash.active = false;
+        }
+
+        for (const e of world.enemies) {
+          if (!e.alive) continue;
+          if (e.flash > 0) e.flash = Math.max(0, e.flash - dt);
+          e.x += e.vx * dt;
+          if (e.x < e.minX) { e.x = e.minX; e.vx = Math.abs(e.vx); }
+          if (e.x + e.w > e.maxX) { e.x = e.maxX - e.w; e.vx = -Math.abs(e.vx); }
+        }
+
+        for (let i = particles.length - 1; i >= 0; i--) {
+          const p = particles[i];
+          p.life -= dt; p.vy += 220 * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+          if (p.life <= 0) particles.splice(i, 1);
+        }
+
+        syncRoom(dt);
+        camera.update(player, viewW, viewH, world, currentRoom, roomTransitionTimer > 0, dt);
+      }
+
+      // === VIEWPORT & RENDER ===
+      let viewW = window.innerWidth, viewH = window.innerHeight;
+      function resize() {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        viewW = window.innerWidth;
+        viewH = window.innerHeight;
+        canvas.width = Math.floor(viewW * dpr);
+        canvas.height = Math.floor(viewH * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+      window.addEventListener('resize', resize);
+      resize();
+      camera.snapTo(player, viewW, viewH, world, currentRoom);
+
+      function render() {
+        const bg = ctx.createLinearGradient(0, 0, 0, viewH);
+        bg.addColorStop(0, '#071420');
+        bg.addColorStop(1, '#04090e');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, viewW, viewH);
+
+        // Parallax Distant Pillars (0.28x camera speed)
+        ctx.fillStyle = 'rgba(14, 34, 48, 0.55)';
+        for (let i = 0; i < 14; i++) {
+          const px = ((i * 340 - camera.x * 0.28) % (viewW + 400)) - 120;
+          ctx.fillRect(px, 0, 68, viewH);
+        }
+        // Parallax Mid Arches (0.55x camera speed)
+        ctx.fillStyle = 'rgba(18, 46, 58, 0.35)';
+        for (let i = 0; i < 10; i++) {
+          const px = ((i * 460 - camera.x * 0.55) % (viewW + 520)) - 140;
+          ctx.fillRect(px, 60, 40, viewH - 60);
+        }
+
+        const sx = shakeTime > 0 ? (Math.random() * 2 - 1) * shakeMag : 0;
+        const sy = shakeTime > 0 ? (Math.random() * 2 - 1) * shakeMag : 0;
+
+        ctx.save();
+        ctx.translate(-Math.round(camera.x + sx), -Math.round(camera.y + sy));
+
+        // Subtle Room Boundary Dividers
+        ctx.strokeStyle = 'rgba(94, 234, 212, 0.08)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 8]);
+        for (const r of world.rooms) ctx.strokeRect(r.x, r.y, r.w, r.h);
+        ctx.setLineDash([]);
+
+        // Platforms
+        for (const p of world.platforms) {
+          ctx.fillStyle = '#0e1d2a';
+          ctx.fillRect(p.x, p.y, p.w, p.h);
+          ctx.fillStyle = '#38bdf8';
+          ctx.fillRect(p.x, p.y, p.w, 5);
+        }
+
+        // Spikes
+        ctx.fillStyle = '#e2e8f0';
+        for (const sp of world.spikes) {
+          for (let tx = sp.x; tx < sp.x + sp.w - 6; tx += 14) {
+            ctx.beginPath();
+            ctx.moveTo(tx, sp.y + sp.h); ctx.lineTo(tx + 7, sp.y); ctx.lineTo(tx + 14, sp.y + sp.h);
+            ctx.fill();
+          }
+        }
+
+        // Enemies
+        for (const e of world.enemies) {
+          if (!e.alive) continue;
+          ctx.fillStyle = e.flash > 0 ? '#ffffff' : '#34d399';
+          ctx.beginPath(); ctx.roundRect(e.x, e.y, e.w, e.h, 8); ctx.fill();
+        }
+
+        // Horned Warrior Player
+        ctx.save();
+        const breatheY = Math.abs(player.vx) < 20 && player.grounded ? Math.sin(time * 4.8) * 3 : 0;
+        ctx.translate(player.x + player.w * 0.5, player.y + player.h);
+        ctx.scale(player.facing * 0.48, 0.48);
+        ctx.translate(0, -68 + breatheY);
+
+        const stride = player.grounded && Math.abs(player.vx) > 20 ? Math.sin(player.runCycle) * 12 : 0;
+        const wave = Math.sin(time * 6) * 3 - Math.min(12, Math.abs(player.vx) * 0.025);
+
+        ctx.fillStyle = '#0f131a';
+        ctx.beginPath(); ctx.moveTo(-10, 42); ctx.lineTo(-4, 42); ctx.lineTo(-8 + stride, 68); ctx.lineTo(-14 + stride, 65); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(4, 42); ctx.lineTo(12, 42); ctx.lineTo(16 - stride, 68); ctx.lineTo(9 - stride, 68); ctx.closePath(); ctx.fill();
+
+        ctx.fillStyle = player.dashTimer > 0 ? '#38bdf8' : '#2c3e55';
+        ctx.strokeStyle = '#090c12'; ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-15, 12); ctx.quadraticCurveTo(0, 18, 15, 12);
+        ctx.lineTo(22 + wave, 46); ctx.lineTo(12 + wave * 0.35, 40);
+        ctx.lineTo(2 + wave * 0.25, 48); ctx.lineTo(-8 + wave * 0.35, 40);
+        ctx.lineTo(-22 + wave, 46); ctx.closePath(); ctx.fill(); ctx.stroke();
+
+        ctx.fillStyle = '#f4f6f8'; ctx.strokeStyle = '#090c12'; ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(-16, -12);
+        ctx.bezierCurveTo(-26, -30, -24, -48, -10, -56);
+        ctx.bezierCurveTo(-15, -42, -14, -28, -8, -22);
+        ctx.quadraticCurveTo(0, -24, 8, -22);
+        ctx.bezierCurveTo(14, -28, 15, -42, 10, -56);
+        ctx.bezierCurveTo(24, -48, 26, -30, 16, -12);
+        ctx.bezierCurveTo(22, 6, 14, 18, 0, 18);
+        ctx.bezierCurveTo(-14, 18, -22, 6, -16, -12);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+
+        ctx.fillStyle = '#090c12';
+        ctx.beginPath(); ctx.ellipse(-6, -1, 4.5, 7.5, -0.08, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(9, -1, 4, 7, 0.08, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+
+        // Slash Arc
+        if (slash.active) {
+          const p = 1 - slash.timer / slash.duration;
+          ctx.save();
+          ctx.translate(slash.x, slash.y);
+          const base = slash.dir === 'right' ? 0 : slash.dir === 'left' ? Math.PI : slash.dir === 'up' ? -Math.PI * 0.5 : Math.PI * 0.5;
+          ctx.strokeStyle = `rgba(122, 231, 255, ${1 - p * 0.6})`;
+          ctx.lineWidth = 8 * (1 - p * 0.4);
+          ctx.beginPath(); ctx.arc(0, 0, slash.radius, base - 1.05, base + 1.05); ctx.stroke();
+          ctx.restore();
+        }
+
+        // Particles
+        for (const pt of particles) {
+          ctx.globalAlpha = Math.max(0, pt.life / pt.maxLife);
+          ctx.fillStyle = pt.color;
+          ctx.beginPath(); ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        ctx.restore();
+      }
+
+      function syncHud() {
+        document.getElementById('roomTitle').textContent = currentRoom.name;
+        document.getElementById('coordTxt').textContent = `[${currentRoom.gx}, ${currentRoom.gy}]`;
+        const masksEl = document.getElementById('masks');
+        if (masksEl.childElementCount !== player.maxHp) {
+          masksEl.innerHTML = Array.from({ length: player.maxHp }, () =>
+            '<svg width="18" height="22" viewBox="0 0 28 32"><path d="M6 10 L4 3 L10 8 L18 8 L24 3 L22 10 C25 14 24 24 14 29 C4 24 3 14 6 10 Z" fill="#eef7f3" stroke="#74c69d" stroke-width="2"/></svg>'
+          ).join('');
+        }
+
+        const svg = document.getElementById('miniSvg');
+        const ns = 'http://www.w3.org/2000/svg';
+        svg.innerHTML = '';
+        const scale = Math.min(130 / world.width, 70 / world.height);
+        const ox = (150 - world.width * scale) * 0.5;
+        const oy = (86 - world.height * scale) * 0.5;
+        for (const r of world.rooms) {
+          const isCur = r.id === currentRoom.id;
+          const rect = document.createElementNS(ns, 'rect');
+          rect.setAttribute('x', ox + r.x * scale);
+          rect.setAttribute('y', oy + r.y * scale);
+          rect.setAttribute('width', r.w * scale - 2);
+          rect.setAttribute('height', r.h * scale - 2);
+          rect.setAttribute('rx', 2);
+          rect.setAttribute('fill', r.visited ? (isCur ? '#1e5447' : '#112e2a') : '#081517');
+          rect.setAttribute('stroke', isCur ? '#a7f3d0' : '#356b59');
+          if (!r.visited) rect.setAttribute('stroke-dasharray', '3 3');
+          svg.appendChild(rect);
+        }
+        const dot = document.createElementNS(ns, 'circle');
+        dot.setAttribute('cx', ox + (player.x + player.w * 0.5) * scale);
+        dot.setAttribute('cy', oy + (player.y + player.h * 0.5) * scale);
+        dot.setAttribute('r', 3.2);
+        dot.setAttribute('fill', '#ffffff');
+        svg.appendChild(dot);
+      }
+
+      let last = performance.now();
+      function loop(now) {
+        const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
+        last = now;
+        time += dt;
+        step(dt);
+        for (const k in pressed) pressed[k] = false;
+        render();
+        syncHud();
+        requestAnimationFrame(loop);
+      }
+      requestAnimationFrame(loop);
+    })();
+  </script>
+</body>
+</html>
